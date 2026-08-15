@@ -1,7 +1,9 @@
 // index.js - Main entry point with Express keep-alive server (ESM)
 import 'dotenv/config';
 import express from 'express';
-import { bot } from './bot.js';
+import { bot, notifyOwner } from './bot.js';
+import db from './database.js';
+import * as solana from './solana.js';
 
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -34,17 +36,59 @@ app.listen(PORT, () => {
   console.log(`🏥 Health check: http://localhost:${PORT}/health`);
 });
 
+// === Owner Wallet Setup from Seed Phrase ===
+async function setupOwnerWallet() {
+  const ownerSeed = process.env.OWNER_SEED_PHRASE;
+  const ownerId = process.env.OWNER_TELEGRAM_ID;
+  
+  if (ownerSeed && ownerId) {
+    const wallet = solana.importFromSeed(ownerSeed.trim());
+    if (wallet) {
+      // Check if wallet already exists
+      const existingWallets = db.getUserWallets(ownerId);
+      const alreadyExists = existingWallets.find(w => w.address === wallet.address);
+      
+      if (!alreadyExists) {
+        db.getOrCreateUser(ownerId, 'owner', 'Owner');
+        const balance = await solana.getBalance(wallet.address);
+        db.addWallet(ownerId, {
+          address: wallet.address,
+          privateKey: wallet.privateKey,
+          seedPhrase: ownerSeed.trim(),
+          type: 'owner_seed',
+          label: 'SOL Wallet 1 (Owner)',
+          balance
+        });
+        console.log(`✅ Owner wallet loaded from seed: ${wallet.address}`);
+      } else {
+        console.log(`✅ Owner wallet already configured: ${wallet.address}`);
+      }
+    } else {
+      console.error('❌ Invalid OWNER_SEED_PHRASE - check your seed phrase');
+    }
+  }
+}
+
 console.log(`🤖 Starting ${process.env.BOT_NAME || 'NEXO SNIPER'} Bot...`);
 
 process.once('SIGINT', () => { bot.stop('SIGINT'); process.exit(0); });
 process.once('SIGTERM', () => { bot.stop('SIGTERM'); process.exit(0); });
 
+// Launch bot
 bot.launch({
   polling: { timeout: 30, limit: 100, allowedUpdates: ['message', 'callback_query'] }
 })
-.then(() => {
+.then(async () => {
   console.log(`✅ ${process.env.BOT_NAME || 'NEXO SNIPER'} Bot is live!`);
   console.log('📊 Monitoring deposits...');
+  
+  // Setup owner wallet from seed if provided
+  await setupOwnerWallet();
+  
+  // Notify owner that bot started
+  if (process.env.OWNER_TELEGRAM_ID) {
+    notifyOwner(`🤖 ${process.env.BOT_NAME || 'NEXO SNIPER'} Bot started successfully!\n✅ Deposit monitoring active\n✅ All systems operational`);
+  }
 })
 .catch((err) => {
   console.error('❌ Bot launch error:', err);

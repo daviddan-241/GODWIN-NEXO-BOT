@@ -17,7 +17,10 @@
     "express": "^4.21.0",
     "dotenv": "^16.4.5"
   },
+  "overrides": {
+    "uuid": "8.3.2"
+  },
   "engines": {
-    "node": "18.x"
+    "node": ">=18.x"
   }
 }
