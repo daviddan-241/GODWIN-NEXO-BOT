@@ -14,12 +14,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const OWNER_ID = process.env.OWNER_TELEGRAM_ID;
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+let BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const LOGO_PATH = path.join(__dirname, '..', 'assets', 'nexo_logo_clean.png');
 
-if (!BOT_TOKEN) {
-  console.error('ERROR: TELEGRAM_BOT_TOKEN is required!');
-  process.exit(1);
+if (!BOT_TOKEN || BOT_TOKEN === 'your_bot_token_here') {
+  console.error('WARNING: TELEGRAM_BOT_TOKEN not set - bot will start when token is added');
+  BOT_TOKEN = 'placeholder';
 }
 
 const bot = new Telegraf(BOT_TOKEN);
