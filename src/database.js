@@ -1,11 +1,14 @@
-// database.js - In-memory + file persistence for users, wallets, settings
-const fs = require('fs');
-const path = require('path');
+// database.js - In-memory + file persistence (ESM)
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
-// Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
@@ -19,7 +22,6 @@ let db = {
   transactions: {}
 };
 
-// Load from file if exists
 function loadDB() {
   try {
     if (fs.existsSync(DB_FILE)) {
@@ -31,7 +33,6 @@ function loadDB() {
   }
 }
 
-// Save to file
 function saveDB() {
   try {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
@@ -41,11 +42,8 @@ function saveDB() {
 }
 
 loadDB();
-
-// Auto-save every 30 seconds
 setInterval(saveDB, 30000);
 
-// === User Management ===
 function getOrCreateUser(telegramId, username, firstName) {
   if (!db.users[telegramId]) {
     db.users[telegramId] = {
@@ -88,19 +86,13 @@ function getUserCount() {
   return Object.keys(db.users).length;
 }
 
-// === Wallet Management ===
 function addWallet(telegramId, walletData) {
   if (!db.users[telegramId]) return;
   const walletId = `wallet_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   walletData.id = walletId;
   walletData.addedAt = new Date().toISOString();
   db.users[telegramId].wallets.push(walletData);
-  
-  // Also store in global wallets map for quick lookup
-  db.wallets[walletData.address] = {
-    ...walletData,
-    telegramId
-  };
+  db.wallets[walletData.address] = { ...walletData, telegramId };
   saveDB();
   return walletData;
 }
@@ -122,7 +114,6 @@ function removeWallet(telegramId, walletAddress) {
   saveDB();
 }
 
-// === Sniper Settings ===
 function getDefaultSniperSettings() {
   return {
     status: 'STANDBY',
@@ -153,7 +144,6 @@ function updateSniperSettings(telegramId, updates) {
   return db.sniperSettings[telegramId];
 }
 
-// === Positions ===
 function addPosition(telegramId, position) {
   if (!db.positions[telegramId]) {
     db.positions[telegramId] = [];
@@ -180,7 +170,6 @@ function closePosition(telegramId, positionId) {
   return pos;
 }
 
-// === Withdrawals ===
 function addWithdrawal(telegramId, withdrawal) {
   const id = `wd_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   withdrawal.id = id;
@@ -196,7 +185,6 @@ function getWithdrawal(id) {
   return db.withdrawals[id] || null;
 }
 
-// === Transactions ===
 function addTransaction(telegramId, tx) {
   const id = `tx_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   tx.id = id;
@@ -213,7 +201,31 @@ function getTransactions(telegramId) {
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 }
 
-module.exports = {
+export {
+  getOrCreateUser,
+  getUser,
+  setUserState,
+  clearUserState,
+  getAllUsers,
+  getUserCount,
+  addWallet,
+  getUserWallets,
+  getWalletByAddress,
+  removeWallet,
+  getSniperSettings,
+  updateSniperSettings,
+  getDefaultSniperSettings,
+  addPosition,
+  getPositions,
+  closePosition,
+  addWithdrawal,
+  getWithdrawal,
+  addTransaction,
+  getTransactions,
+  saveDB
+};
+
+export default {
   getOrCreateUser,
   getUser,
   setUserState,

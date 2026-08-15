@@ -1,7 +1,6 @@
-// keyboards.js - All Telegram inline keyboards
-const { Markup } = require('telegraf');
+// keyboards.js - All Telegram inline keyboards (ESM)
+import { Markup } from 'telegraf';
 
-// Main Dashboard keyboard
 function dashboardKeyboard() {
   return Markup.inlineKeyboard([
     [
@@ -10,7 +9,7 @@ function dashboardKeyboard() {
     ],
     [
       Markup.button.callback('🤖 AI Sniper', 'sniper'),
-      Markup.button.callback('🔁 Copy Trade', 'copytrade')
+      Markup.button.callback('🔄 Copy Trade', 'copytrade')
     ],
     [
       Markup.button.callback('💸 Buy / Sell', 'buysell'),
@@ -23,12 +22,11 @@ function dashboardKeyboard() {
   ]);
 }
 
-// Wallet Management keyboard
 function walletKeyboard(hasWallets, walletCount) {
   const buttons = [];
   
   buttons.push([
-    Markup.button.callback(`🟣 Add SOL Wallet ${walletCount + 1}`, 'wallet_add')
+    Markup.button.callback(`🟣 Add SOL Wallet ${walletCount}`, 'wallet_add')
   ]);
   buttons.push([
     Markup.button.callback('🔑 Import to Wallet', 'wallet_import'),
@@ -56,10 +54,9 @@ function walletKeyboard(hasWallets, walletCount) {
   return Markup.inlineKeyboard(buttons);
 }
 
-// AI Sniper keyboard
 function sniperKeyboard(isActive) {
   const activateBtn = isActive
-    ? Markup.button.callback('⏸ Pause Sniper', 'sniper_pause')
+    ? Markup.button.callback('⏸️ Pause Sniper', 'sniper_pause')
     : Markup.button.callback('▶ Activate Sniper', 'sniper_activate');
   
   return Markup.inlineKeyboard([
@@ -77,7 +74,7 @@ function sniperKeyboard(isActive) {
       Markup.button.callback('📉 Stop Loss', 'sniper_stoploss')
     ],
     [
-      Markup.button.callback('🛡 Anti-Rug: ON', 'sniper_antirug')
+      Markup.button.callback('🛡️ Anti-Rug: ON', 'sniper_antirug')
     ],
     [
       Markup.button.callback('🏠 Dashboard', 'back_dashboard')
@@ -85,28 +82,24 @@ function sniperKeyboard(isActive) {
   ]);
 }
 
-// Back to sniper button
 function backToSniperKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('⬅️ Back to Sniper', 'sniper')]
   ]);
 }
 
-// Back to dashboard button
 function backToDashboardKeyboard() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('🏠 Back to Dashboard', 'back_dashboard')]
   ]);
 }
 
-// Cancel button
 function cancelButton() {
   return Markup.inlineKeyboard([
     [Markup.button.callback('❌ Cancel', 'cancel')]
   ]);
 }
 
-// Confirm/Cancel buttons
 function confirmCancelKeyboard() {
   return Markup.inlineKeyboard([
     [
@@ -116,12 +109,11 @@ function confirmCancelKeyboard() {
   ]);
 }
 
-// Token search result keyboard
 function tokenSearchKeyboard(tokenAddress) {
   return Markup.inlineKeyboard([
     [
       Markup.button.callback('💸 Buy', `buy_${tokenAddress}`),
-      Markup.button.callback('卖出 Sell', `sell_${tokenAddress}`)
+      Markup.button.callback('📉 Sell', `sell_${tokenAddress}`)
     ],
     [
       Markup.button.callback('🔍 New Search', 'search'),
@@ -130,16 +122,11 @@ function tokenSearchKeyboard(tokenAddress) {
   ]);
 }
 
-// Buy/Sell keyboard
 function buySellKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('💰 Buy with SOL', 'buy_sol'),
-      Markup.button.callback('💎 Buy with USDC', 'buy_usdc')
-    ],
-    [
-      Markup.button.callback('🔄 Sell Token', 'sell_token'),
-      Markup.button.callback('📊 Quick Buy', 'quickbuy')
+      Markup.button.callback('📈 Buy', 'buy_sol'),
+      Markup.button.callback('📉 Sell', 'sell_token')
     ],
     [
       Markup.button.callback('🏠 Dashboard', 'back_dashboard')
@@ -147,7 +134,6 @@ function buySellKeyboard() {
   ]);
 }
 
-// Positions keyboard
 function positionsKeyboard(hasPositions) {
   if (!hasPositions) {
     return Markup.inlineKeyboard([
@@ -161,7 +147,6 @@ function positionsKeyboard(hasPositions) {
   ]);
 }
 
-// Help keyboard
 function helpKeyboard() {
   return Markup.inlineKeyboard([
     [
@@ -175,12 +160,11 @@ function helpKeyboard() {
   ]);
 }
 
-// Copy Trade keyboard
 function copyTradeKeyboard() {
   return Markup.inlineKeyboard([
     [
-      Markup.button.callback('➕ Add Wallet to Copy', 'copytrade_add'),
-      Markup.button.callback('📋 List Copied', 'copytrade_list')
+      Markup.button.callback('▶️ START COPY TRADE', 'copytrade_start'),
+      Markup.button.callback('🎯 Configure Target Wallet', 'copytrade_add')
     ],
     [
       Markup.button.callback('🏠 Dashboard', 'back_dashboard')
@@ -188,7 +172,7 @@ function copyTradeKeyboard() {
   ]);
 }
 
-module.exports = {
+export {
   dashboardKeyboard,
   walletKeyboard,
   sniperKeyboard,

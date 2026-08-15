@@ -1,9 +1,6 @@
-// tokens.js - Real token search via DexScreener API
-const fetch = require('node-fetch');
-
+// tokens.js - Real token search via DexScreener API (ESM - uses native fetch)
 const DEXSCREENER_API = 'https://api.dexscreener.com';
 
-// Search for tokens by name/symbol/address
 async function searchToken(query) {
   try {
     const url = `${DEXSCREENER_API}/latest/dex/search?q=${encodeURIComponent(query)}`;
@@ -14,7 +11,6 @@ async function searchToken(query) {
       return null;
     }
     
-    // Get the first Solana pair (or first overall)
     const solPair = data.pairs.find(p => p.chainId === 'solana') || data.pairs[0];
     return parseTokenData(solPair);
   } catch (error) {
@@ -23,7 +19,6 @@ async function searchToken(query) {
   }
 }
 
-// Get token by contract address (Solana)
 async function getTokenByAddress(address) {
   try {
     const url = `${DEXSCREENER_API}/tokens/v1/solana/${address}`;
@@ -31,7 +26,6 @@ async function getTokenByAddress(address) {
     const data = await resp.json();
     
     if (!data || data.length === 0) {
-      // Try search
       return await searchToken(address);
     }
     
@@ -51,7 +45,6 @@ function parseTokenData(pair) {
   const priceChange = pair.priceChange || {};
   const txns = pair.txns || {};
   
-  // Calculate risk level
   const liqUsd = liquidity.usd || 0;
   const vol24h = volume.h24 || 0;
   const mcap = pair.fdv || pair.marketCap || 0;
@@ -96,23 +89,22 @@ function parseTokenData(pair) {
   };
 }
 
-// Format token info for display
 function formatTokenInfo(token) {
   if (!token) return '❌ Token not found.';
   
-  let formatted = `🎯 **${token.name} (${token.symbol})**\n`;
+  let formatted = `🎯 ${token.name} (${token.symbol})\n`;
   formatted += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  formatted += `📌 **Contract:**\n\`${token.address}\`\n\n`;
-  formatted += `💰 **Price:** $${token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}\n`;
-  formatted += `📊 **Market Cap:** $${formatNumber(token.mcap)}\n`;
-  formatted += `💧 **Liquidity:** $${formatNumber(token.liquidity)}\n`;
-  formatted += `📈 **24h Volume:** $${formatNumber(token.volume24h)}\n`;
-  formatted += `📊 **24h Change:** ${token.change24h >= 0 ? '📈' : '📉'} ${token.change24h.toFixed(2)}%\n`;
-  formatted += `🔄 **24h Txns:** ${token.buys24h} buys / ${token.sells24h} sells\n`;
+  formatted += `Contract:\n${token.address}\n\n`;
+  formatted += `Price: $${token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}\n`;
+  formatted += `Market Cap: $${formatNumber(token.mcap)}\n`;
+  formatted += `Liquidity: $${formatNumber(token.liquidity)}\n`;
+  formatted += `24h Volume: $${formatNumber(token.volume24h)}\n`;
+  formatted += `24h Change: ${token.change24h >= 0 ? '📈' : '📉'} ${token.change24h.toFixed(2)}%\n`;
+  formatted += `24h Txns: ${token.buys24h} buys / ${token.sells24h} sells\n`;
   formatted += `━━━━━━━━━━━━━━━━━━━━━\n`;
-  formatted += `🛡 **Risk Analysis:** ${token.riskLevel}\n`;
-  formatted += `🔗 **Dex:** ${token.dex}\n`;
-  formatted += `🌐 [View on DexScreener](${token.pairUrl})\n`;
+  formatted += `Risk Analysis: ${token.riskLevel}\n`;
+  formatted += `Dex: ${token.dex}\n`;
+  formatted += `View on DexScreener: ${token.pairUrl}\n`;
   
   return formatted;
 }
@@ -124,9 +116,4 @@ function formatNumber(num) {
   return num.toFixed(2);
 }
 
-module.exports = {
-  searchToken,
-  getTokenByAddress,
-  formatTokenInfo,
-  formatNumber
-};
+export { searchToken, getTokenByAddress, formatTokenInfo, formatNumber };

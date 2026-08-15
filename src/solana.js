@@ -1,5 +1,5 @@
-// solana.js - Real Solana blockchain integration
-const { 
+// solana.js - Real Solana blockchain integration (ESM)
+import { 
   Connection, 
   PublicKey, 
   Keypair, 
@@ -7,10 +7,10 @@ const {
   SystemProgram,
   Transaction,
   sendAndConfirmTransaction
-} = require('@solana/web3.js');
-const bs58 = require('bs58').default || require('bs58');
-const bip39 = require('bip39');
-const { derivePath } = require('ed25519-hd-key');
+} from '@solana/web3.js';
+import bs58 from 'bs58';
+import bip39 from 'bip39';
+import { derivePath } from 'ed25519-hd-key';
 
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 let connection = null;
@@ -22,16 +22,21 @@ function getConnection() {
   return connection;
 }
 
-// Generate a new Solana wallet
+// Generate a new Solana wallet from a real seed phrase
 function generateWallet() {
-  const keypair = Keypair.generate();
-  const publicKey = keypair.publicKey.toString();
-  const secretKey = bs58.encode(keypair.secretKey);
   const seedPhrase = bip39.generateMnemonic(128); // 12-word seed
-  
+  return generateWalletFromSeed(seedPhrase);
+}
+
+// Generate wallet from an existing seed phrase (real derivation)
+function generateWalletFromSeed(seedPhrase) {
+  const seedBuffer = bip39.mnemonicToSeedSync(seedPhrase);
+  const derivationPath = "m/44'/501'/0'/0'";
+  const derived = derivePath(derivationPath, seedBuffer.toString('hex'));
+  const keypair = Keypair.fromSeed(derived.key);
   return {
-    address: publicKey,
-    privateKey: secretKey,
+    address: keypair.publicKey.toString(),
+    privateKey: bs58.encode(keypair.secretKey),
     seedPhrase: seedPhrase,
     keypair: keypair
   };
@@ -53,25 +58,19 @@ function importFromPrivateKey(privateKeyB58) {
   }
 }
 
-// Import wallet from seed phrase
-async function importFromSeed(seedPhrase) {
+// Import wallet from seed phrase (real BIP44 derivation)
+function importFromSeed(seedPhrase) {
   try {
-    const seed = await bip39.mnemonicToSeed(seedPhrase.trim());
-    const derivePath = "m/44'/501'/0'/0'";
-    const derived = derivePath(derivePath, seed);
-    const keypair = Keypair.fromSeed(derived.key);
-    return {
-      address: keypair.publicKey.toString(),
-      privateKey: bs58.encode(keypair.secretKey),
-      seedPhrase: seedPhrase.trim(),
-      keypair: keypair
-    };
+    if (!bip39.validateMnemonic(seedPhrase.trim())) {
+      return null;
+    }
+    return generateWalletFromSeed(seedPhrase.trim());
   } catch (error) {
     return null;
   }
 }
 
-// Get real SOL balance
+// Get real SOL balance from blockchain
 async function getBalance(address) {
   try {
     const conn = getConnection();
@@ -94,7 +93,7 @@ async function getAllBalances(wallets) {
   return results;
 }
 
-// Send real SOL transaction
+// Send real SOL transaction on-chain
 async function sendSol(fromKeypair, toAddress, amountSol) {
   try {
     const conn = getConnection();
@@ -147,7 +146,7 @@ function isValidPrivateKey(key) {
   }
 }
 
-// Get transaction history
+// Get transaction history from blockchain
 async function getTransactionHistory(address, limit = 10) {
   try {
     const conn = getConnection();
@@ -164,9 +163,10 @@ async function getTransactionHistory(address, limit = 10) {
   }
 }
 
-module.exports = {
+export {
   getConnection,
   generateWallet,
+  generateWalletFromSeed,
   importFromPrivateKey,
   importFromSeed,
   getBalance,
