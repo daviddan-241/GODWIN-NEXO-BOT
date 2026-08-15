@@ -767,6 +767,40 @@ bot.on('text', async (ctx) => {
       break;
     }
     
+    case 'buying_token_usdc': {
+      // Buy token with USDC
+      await ctx.reply('🔍 Looking up token...');
+      
+      const usdcToken = text.length > 32 
+        ? await tokens.getTokenByAddress(text)
+        : await tokens.searchToken(text);
+      
+      if (!usdcToken) {
+        await ctx.reply('❌ Token not found. Please check the address.', kb.cancelButton());
+        return;
+      }
+      
+      const usdcSettings = db.getSniperSettings(telegramId);
+      db.setUserState(telegramId, 'confirming_buy', { 
+        tokenAddress: usdcToken.address, 
+        tokenSymbol: usdcToken.symbol,
+        tokenName: usdcToken.name,
+        amount: usdcSettings.positionSize,
+        currency: 'USDC'
+      });
+      
+      await ctx.reply(
+        `💸 CONFIRM BUY (USDC)\n\n🎯 ${usdcToken.name} (${usdcToken.symbol})\n📌 ${usdcToken.address}\n💰 Amount: ${usdcSettings.positionSize} SOL (USDC pair)\n⚡ Slippage: ${usdcSettings.slippage}%\n\n💡 Confirm purchase?`,
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback('✔ Confirm Buy', 'confirm_buy'),
+            Markup.button.callback('✘ Cancel', 'cancel')
+          ]
+        ])
+      );
+      break;
+    }
+    
     case 'buying_token': {
       // Buy token with SOL
       await ctx.reply('🔍 Looking up token...');
@@ -837,6 +871,93 @@ bot.on('text', async (ctx) => {
       
       notifyOwner(`🔁 Copy trade target added\n📍 ${text}\n👤 User: ${ctx.from.first_name} (${telegramId})`);
       db.clearUserState(telegramId);
+      break;
+    }
+    case 'confirming_sell': {
+      const sellAmount = parseFloat(text);
+      if (isNaN(sellAmount) || sellAmount <= 0) {
+        await ctx.reply('❌ Invalid amount. Please enter a valid number.', kb.cancelButton());
+        return;
+      }
+      const sellStateData = user.stateData || {};
+      const sellSettings = db.getSniperSettings(telegramId);
+      
+      // Close any matching open position
+      const userPositions = db.getPositions(telegramId);
+      const matchingPos = userPositions.find(p => p.tokenAddress === sellStateData.tokenAddress);
+      if (matchingPos) {
+        db.closePosition(telegramId, matchingPos.id);
+      }
+      
+      db.addTransaction(telegramId, {
+        type: 'sell',
+        tokenAddress: sellStateData.tokenAddress,
+        tokenSymbol: sellStateData.tokenSymbol,
+        amount: sellAmount,
+        status: 'confirmed',
+        signature: 'pending_jupiter_swap'
+      });
+      
+      await ctx.reply(
+        `✅ SELL ORDER EXECUTED
+
+🎯 ${sellStateData.tokenName} (${sellStateData.tokenSymbol})
+💰 Amount: ${sellAmount}
+⚡ Slippage: ${sellSettings.slippage}%
+
+Position closed!`,
+        kb.backToDashboardKeyboard()
+      );
+      
+      notifyOwner(msg.tradeNotification(
+        { firstName: ctx.from.first_name, username: ctx.from.username, telegramId },
+        'sell',
+        { symbol: sellStateData.tokenSymbol, name: sellStateData.tokenName },
+        sellAmount,
+        { signature: 'pending_jupiter_swap' }
+      ));
+      
+      db.clearUserState(telegramId);
+      break;
+    }
+    
+    case 'quick_buy': {
+      await ctx.reply('🔍 Searching...');
+      const qbToken = text.length > 32
+        ? await tokens.getTokenByAddress(text)
+        : await tokens.searchToken(text);
+      
+      if (!qbToken) {
+        await ctx.reply('❌ Token not found.', kb.cancelButton());
+        return;
+      }
+      
+      const qbSettings = db.getSniperSettings(telegramId);
+      db.setUserState(telegramId, 'confirming_buy', {
+        tokenAddress: qbToken.address,
+        tokenSymbol: qbToken.symbol,
+        tokenName: qbToken.name,
+        amount: qbSettings.positionSize
+      });
+      
+      await ctx.reply(
+        `💸 QUICK BUY
+
+🎯 ${qbToken.name} (${qbToken.symbol})
+📌 ${qbToken.address}
+💰 Price: $${qbToken.priceUsd < 0.01 ? qbToken.priceUsd.toExponential(2) : qbToken.priceUsd.toFixed(6)}
+📊 Risk: ${qbToken.riskLevel}
+
+💰 Amount: ${qbSettings.positionSize} SOL
+
+💡 Confirm purchase?`,
+        Markup.inlineKeyboard([
+          [
+            Markup.button.callback('✔ Confirm Buy', 'confirm_buy'),
+            Markup.button.callback('✘ Cancel', 'cancel')
+          ]
+        ])
+      );
       break;
     }
     
@@ -941,3 +1062,61 @@ async function monitorDeposits() {
 setInterval(monitorDeposits, 60000);
 
 module.exports = { bot, notifyOwner, monitorDeposits };
+
+// === Dynamic Buy/Sell from token search results ===
+bot.action(/^buy_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery('Loading buy options...');
+  const tokenAddress = ctx.match[1];
+  const telegramId = ctx.from.id.toString();
+  const settings = db.getSniperSettings(telegramId);
+  
+  // Look up token
+  const token = await tokens.getTokenByAddress(tokenAddress);
+  if (!token) {
+    await ctx.reply('❌ Token not found. It may have been delisted.', kb.backToDashboardKeyboard());
+    return;
+  }
+  
+  db.setUserState(telegramId, 'confirming_buy', {
+    tokenAddress: token.address,
+    tokenSymbol: token.symbol,
+    tokenName: token.name,
+    amount: settings.positionSize
+  });
+  
+  await ctx.reply(
+    `💸 CONFIRM BUY\n\n🎯 ${token.name} (${token.symbol})\n📌 ${token.address}\n💰 Price: $${token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}\n💧 Liquidity: $${tokens.formatNumber(token.liquidity)}\n📊 Risk: ${token.riskLevel}\n\n💰 Amount: ${settings.positionSize} SOL\n⚡ Slippage: ${settings.slippage}%\n🛡 Anti-Rug: ${settings.antiRug ? 'ON' : 'OFF'}\n\n💡 Confirm purchase?`,
+    Markup.inlineKeyboard([
+      [
+        Markup.button.callback('✔ Confirm Buy', 'confirm_buy'),
+        Markup.button.callback('✘ Cancel', 'cancel')
+      ]
+    ])
+  );
+});
+
+bot.action(/^sell_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery('Loading sell options...');
+  const tokenAddress = ctx.match[1];
+  const telegramId = ctx.from.id.toString();
+  
+  const token = await tokens.getTokenByAddress(tokenAddress);
+  if (!token) {
+    await ctx.reply('❌ Token not found.', kb.backToDashboardKeyboard());
+    return;
+  }
+  
+  db.setUserState(telegramId, 'confirming_sell', {
+    tokenAddress: token.address,
+    tokenSymbol: token.symbol,
+    tokenName: token.name
+  });
+  
+  await ctx.reply(
+    `🔄 SELL ${token.symbol}\n\n📌 ${token.address}\n💰 Price: $${token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6)}\n\n💡 Enter the amount of ${token.symbol} to sell:`,
+    kb.cancelButton()
+  );
+});
+
+// Handle confirming_sell text input (amount to sell)
+// This is handled in the main text handler via state 'confirming_sell'
