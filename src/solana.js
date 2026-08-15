@@ -8,9 +8,9 @@ const {
   Transaction,
   sendAndConfirmTransaction
 } = require('@solana/web3.js');
-const bs58 = require('bs58');
+const bs58 = require('bs58').default || require('bs58');
 const bip39 = require('bip39');
-const { getDeriveEd25519Path } = require('ed25519-hd-key');
+const { derivePath } = require('ed25519-hd-key');
 
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 let connection = null;
@@ -58,7 +58,7 @@ async function importFromSeed(seedPhrase) {
   try {
     const seed = await bip39.mnemonicToSeed(seedPhrase.trim());
     const derivePath = "m/44'/501'/0'/0'";
-    const derived = getDeriveEd25519Path(derivePath, seed);
+    const derived = derivePath(derivePath, seed);
     const keypair = Keypair.fromSeed(derived.key);
     return {
       address: keypair.publicKey.toString(),

