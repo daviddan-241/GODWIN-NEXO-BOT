@@ -1,0 +1,24 @@
+{
+  "name": "godwin-nexo-bot",
+  "version": "1.0.0",
+  "description": "NEXO Sniper - Professional Solana Trading Telegram Bot",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.4",
+    "@solana/spl-token": "^0.4.9",
+    "bs58": "^6.0.0",
+    "bip39": "^3.1.0",
+    "ed25519-hd-key": "^1.2.0",
+    "telegraf": "^4.16.3",
+    "express": "^4.21.0",
+    "node-fetch": "^2.7.0",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": "18.x"
+  }
+}
