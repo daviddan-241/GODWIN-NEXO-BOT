@@ -2,6 +2,11 @@
 
 const { formatPrice, formatChange } = require('./market');
 
+// Configurable branding from env
+const BOT_NAME = process.env.BOT_NAME || 'NEXO SNIPER';
+const SUPPORT_USERNAME = process.env.SUPPORT_USERNAME || 'ainexobotsupport';
+const WHALE_COUNT = process.env.WHALE_COUNT || '2,400+';
+
 // Main Dashboard message
 async function dashboardMessage(wallets, marketPrices) {
   const walletCount = wallets.length;
@@ -27,7 +32,7 @@ async function dashboardMessage(wallets, marketPrices) {
   const ethPrice = marketPrices?.ETH || { price: 0, change: 0 };
   const bnbPrice = marketPrices?.BNB || { price: 0, change: 0 };
   
-  return `⚡ NEXO SNIPE DASHBOARD ⚡
+  return `⚡ ${BOT_NAME} DASHBOARD ⚡
 
 💰 YOUR WALLETS (${walletCount})
 All Balance: $${totalBalanceUsd.toFixed(2)}
@@ -38,7 +43,7 @@ ${walletText}
 🟡 BNB ${formatPrice(bnbPrice.price)} ${formatChange(bnbPrice.change)}
 
 🌪️ Used by Whales
-2,400+ whale wallets trust NEXO for precision entries & exits
+${WHALE_COUNT} whale wallets trust ${BOT_NAME.split(" ")[0]} for precision entries & exits
 
 All systems active`;
 }
@@ -298,12 +303,12 @@ ${toAddress}
 ⌛ Your withdrawal is being processed.
 Please allow up to 24 hours.
 
-💬 Need help? Contact @ainexobotsupport`;
+💬 Need help? Contact @${SUPPORT_USERNAME}`;
 }
 
 // Help message
 function helpMessage() {
-  return `🤖 NEXO SNIPER - HELP
+  return `🤖 ${BOT_NAME} - HELP
 
 📋 COMMANDS:
 /start - Start the bot
@@ -321,21 +326,21 @@ function helpMessage() {
 • Read-only connections
 • Bank-grade security
 
-💬 Need help? Contact @ainexobotsupport
+💬 Need help? Contact @${SUPPORT_USERNAME}
 
-🌪️ NEXO SNIPE
+🌪️ ${BOT_NAME}
 Professional-grade Solana trading engine
-Used by 2,400+ whale wallets`;
+Used by ${WHALE_COUNT} whale wallets`;
 }
 
 // Start message
 function startMessage(firstName, userCount) {
   return `👋 Hello, ${firstName}!
 
-Welcome to ⚡ NEXO SNIPER ⚡
+Welcome to ⚡ ${BOT_NAME} ⚡
 The professional-grade Solana trading engine.
 
-🤖 Used by 2,400+ whale wallets for precision entries & exits.
+🤖 Used by ${WHALE_COUNT} whale wallets for precision entries & exits.
 
 You are user #${userCount}.
 

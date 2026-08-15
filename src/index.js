@@ -15,7 +15,7 @@ app.get('/health', (req, res) => {
     status: 'ok',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    bot: 'NEXO Sniper',
+    bot: process.env.BOT_NAME || 'NEXO SNIPER',
     version: '1.0.0'
   });
 });
@@ -45,7 +45,7 @@ app.listen(PORT, () => {
 });
 
 // Start Telegram bot
-console.log('🤖 Starting NEXO Sniper Bot...');
+console.log(`🤖 Starting ${process.env.BOT_NAME || 'NEXO SNIPER'} Bot...`);
 
 // Enable graceful stop
 process.once('SIGINT', () => {
@@ -68,7 +68,7 @@ bot.launch({
   }
 })
 .then(() => {
-  console.log('✅ NEXO Sniper Bot is live!');
+  console.log(`✅ ${process.env.BOT_NAME || 'NEXO SNIPER'} Bot is live!`);
   console.log('📊 Monitoring deposits...');
 })
 .catch((err) => {
