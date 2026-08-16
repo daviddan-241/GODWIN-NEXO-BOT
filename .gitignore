@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+coverage/
+
+# Environment — never commit real credentials
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Secrets (private keys, keystores, dumps)
+*.pem
+*.key
+*.keystore
+*.p12
+wallet-export*
+secrets/
+*.sql.dump
+
+# Local test artifacts
+tmp/

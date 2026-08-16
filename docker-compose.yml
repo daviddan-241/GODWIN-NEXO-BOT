@@ -1,0 +1,36 @@
+# Local production-like stack: PostgreSQL + the bot.
+#   cp .env.example .env   # fill in real values
+#   docker compose up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hfive}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hfive}
+      POSTGRES_DB: ${POSTGRES_DB:-hfive}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-hfive} -d ${POSTGRES_DB:-hfive}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - '127.0.0.1:5432:5432'
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Inside the compose network the DB host is "db".
+      DATABASE_URL: postgres://${POSTGRES_USER:-hfive}:${POSTGRES_PASSWORD:-hfive}@db:5432/${POSTGRES_DB:-hfive}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+
+volumes:
+  pgdata:
