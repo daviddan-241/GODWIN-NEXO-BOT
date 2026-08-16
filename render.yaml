@@ -14,7 +14,7 @@ services:
         value: devnet
       - key: SOLANA_MAINNET_ENABLED
         value: 'false'
-      - key: MINIMUM_SOL
+      - key: MIN_SOL_BALANCE
         value: '3.0000'
       - key: LOG_LEVEL
         value: info
@@ -22,7 +22,7 @@ services:
         sync: false
       - key: ADMIN_IDS
         sync: false
-      - key: WALLET_ENCRYPTION_KEY
+      - key: ENCRYPTION_KEY
         sync: false
       - key: DATABASE_URL
         fromDatabase:
