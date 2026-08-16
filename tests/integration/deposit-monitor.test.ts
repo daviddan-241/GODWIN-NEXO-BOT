@@ -22,7 +22,7 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
   const { logger } = createTestLogger();
   const solana = new FakeSolanaClient();
   const adminTransport = new FakeAdminTransport();
-  const notifier = new AdminNotifier(adminTransport, config.ADMIN_CHAT_IDS, logger);
+  const notifier = new AdminNotifier(adminTransport, config.ADMIN_IDS, logger);
   const monitor = new DepositMonitor(config, repos, solana, notifier, logger);
 
   const chatId = 3_000_001;
@@ -39,6 +39,7 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
       address: walletAddress,
       encryptedSecret: { test: true },
       derivation: 'mnemonic',
+      walletNumber: 1,
     });
   });
 
@@ -56,8 +57,16 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
     expect(adminTransport.messages).toHaveLength(0);
   });
 
-  it('detects a SOL deposit and notifies the admin', async () => {
+  it('detects a SOL deposit and notifies the admin with tx metadata', async () => {
+    // Best-effort metadata: the fake chain reports a recent signature and sender.
     solana.balances.set(walletAddress, 1_500_000_000); // +0.5 SOL
+    solana.signatures.set(walletAddress, [
+      { signature: '5depositSignatureDepositSignatureDepositSignatureDep', err: null },
+    ]);
+    solana.senders.set(
+      '5depositSignatureDepositSignatureDepositSignatureDep',
+      'SenderWallet1111111111111111111111111111111111111111',
+    );
     await monitor.pollOnce();
 
     const deposits = await repos.getDeposits(chatId);
@@ -65,10 +74,12 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
     expect(deposits[0].mint).toBe(WSOL_MINT);
     expect(deposits[0].amount).toBe('500000000');
 
-    const notification = adminTransport.messages.find((m) => m.text.includes('Deposit detected'));
+    const notification = adminTransport.messages.find((m) => m.text.includes('Deposit'));
     expect(notification).toBeTruthy();
     expect(notification!.text).toContain('0.5 SOL');
-    expect(notification!.text).toContain(String(chatId));
+    expect(notification!.text).toContain('SenderWallet1111');
+    expect(notification!.text).toContain('5depositSignature');
+    expect(notification!.text).toContain(walletAddress.slice(0, 8));
   });
 
   it('detects a token deposit', async () => {

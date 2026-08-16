@@ -138,13 +138,19 @@ export class DepositMonitor {
           { chatId, mint: diff.mint, amount: diff.delta.toString() },
           'deposit detected',
         );
-        await this.notifier.send(
-          `💰 <b>Deposit detected</b>\n` +
-            `User: <code>${chatId}</code>\n` +
-            `Amount: ${display}\n` +
-            `Token: <code>${shortAddress(diff.mint)}</code>\n` +
-            `Wallet: <code>${shortAddress(address)}</code>`,
-        );
+
+        // Best-effort enrichment: latest tx signature + sender (if the
+        // chain exposes them) for the admin deposit event.
+        const meta = await this.findDepositMeta(address);
+
+        await this.notifier.event('deposit', {
+          wallet: address,
+          sender: meta.sender ?? 'unknown',
+          amount: display,
+          token: diff.mint === WSOL_MINT ? 'SOL' : shortAddress(diff.mint),
+          signature: meta.signature ?? 'n/a',
+          user: chatId,
+        });
       } else {
         // Outflow — normal wallet activity (trades/withdrawals are
         // re-baselined, so this is informational only).
@@ -153,6 +159,24 @@ export class DepositMonitor {
     }
 
     await this.repos.saveSnapshots(chatId, curr);
+  }
+
+  /**
+   * Best-effort lookup of the most recent successful transaction for the
+   * wallet and its sender. Failures degrade to nulls — deposits are still
+   * recorded without tx metadata.
+   */
+  private async findDepositMeta(address: string): Promise<{ signature: string | null; sender: string | null }> {
+    try {
+      const recent = await this.solana.getRecentSignatures(address, 5);
+      const first = recent.find((r) => r.err === null);
+      if (!first) return { signature: null, sender: null };
+      const sender = await this.solana.getTransactionSender(first.signature, address).catch(() => null);
+      return { signature: first.signature, sender };
+    } catch (err) {
+      this.logger.debug({ err: err instanceof Error ? err.message : String(err) }, 'deposit meta lookup failed');
+      return { signature: null, sender: null };
+    }
   }
 
   /** Re-snapshots a wallet immediately (after trades/withdrawals). */

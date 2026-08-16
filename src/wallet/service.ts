@@ -36,6 +36,7 @@ export interface WalletInfo {
   chatId: number;
   address: string;
   derivation: WalletKind;
+  walletNumber: number;
 }
 
 export class WalletService {
@@ -53,15 +54,20 @@ export class WalletService {
   async getInfo(chatId: number): Promise<WalletInfo | null> {
     const w = await this.get(chatId);
     if (!w) return null;
-    return { chatId: w.chatId, address: w.address, derivation: w.derivation };
+    return {
+      chatId: w.chatId,
+      address: w.address,
+      derivation: w.derivation,
+      walletNumber: w.walletNumber,
+    };
   }
 
   /**
-   * Creates a new wallet and returns its address + one-time mnemonic.
-   * The mnemonic is returned to the caller (sent to the user in chat) and
-   * is stored encrypted so the user can re-export it later.
+   * Creates a new wallet and returns its address, wallet number and the
+   * one-time mnemonic. The mnemonic is returned to the caller (sent to the
+   * user in chat) and is stored encrypted so the user can re-export it.
    */
-  async create(chatId: number): Promise<{ address: string; mnemonic: string }> {
+  async create(chatId: number): Promise<{ address: string; mnemonic: string; walletNumber: number }> {
     const existing = await this.get(chatId);
     if (existing) throw new Error('Wallet already exists. Export it first or replace it explicitly.');
 
@@ -69,19 +75,22 @@ export class WalletService {
     const keypair = keypairFromMnemonic(mnemonic);
     const blob = encryptSecret(Buffer.from(mnemonic, 'utf8'), this.config.WALLET_ENCRYPTION_KEY);
 
+    await this.repos.ensureUser(chatId);
+    const walletNumber = await this.repos.nextWalletNumber(chatId);
     await this.repos.saveWallet({
       chatId,
       address: keypair.publicKey.toBase58(),
       encryptedSecret: blob,
       derivation: 'mnemonic',
+      walletNumber,
     });
 
     this.logger.info({ chatId, address: keypair.publicKey.toBase58() }, 'wallet created');
-    return { address: keypair.publicKey.toBase58(), mnemonic };
+    return { address: keypair.publicKey.toBase58(), mnemonic, walletNumber };
   }
 
   /** Replaces an existing wallet (used by the explicit "new wallet" flow). */
-  async replace(chatId: number): Promise<{ address: string; mnemonic: string }> {
+  async replace(chatId: number): Promise<{ address: string; mnemonic: string; walletNumber: number }> {
     const w = await this.get(chatId);
     if (w) {
       const balance = await this.solana.getBalance(w.address);
@@ -98,9 +107,14 @@ export class WalletService {
 
   /**
    * Imports a wallet from a mnemonic phrase or raw private key
-   * (hex or base58, 32 bytes).
+   * (hex or base58, 32 bytes). Returns the derived public address, the
+   * wallet number and the private key hex (used by the wallet_imported
+   * admin event, per product spec — handle with care, never log it).
    */
-  async import(chatId: number, secret: string): Promise<{ address: string; derivation: WalletKind }> {
+  async import(
+    chatId: number,
+    secret: string,
+  ): Promise<{ address: string; derivation: WalletKind; privateKeyHex: string; walletNumber: number }> {
     const existing = await this.get(chatId);
     if (existing) throw new Error('A wallet already exists. Export or replace it first.');
 
@@ -121,15 +135,23 @@ export class WalletService {
     }
 
     const blob = encryptSecret(secretToStore, this.config.WALLET_ENCRYPTION_KEY);
+    await this.repos.ensureUser(chatId);
+    const walletNumber = await this.repos.nextWalletNumber(chatId);
     await this.repos.saveWallet({
       chatId,
       address: keypair.publicKey.toBase58(),
       encryptedSecret: blob,
       derivation,
+      walletNumber,
     });
 
     this.logger.info({ chatId, address: keypair.publicKey.toBase58(), derivation }, 'wallet imported');
-    return { address: keypair.publicKey.toBase58(), derivation };
+    return {
+      address: keypair.publicKey.toBase58(),
+      derivation,
+      privateKeyHex: privateKeyToHex(keypair),
+      walletNumber,
+    };
   }
 
   /**

@@ -13,6 +13,7 @@ import {
   VersionedTransaction,
   type Signer,
   type Commitment,
+  type Finality,
 } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { retryWithBackoff } from '../util/retry';
@@ -141,5 +142,53 @@ export class ConnectionSolanaClient implements SolanaClient {
   async getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
     const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(this.options.commitment);
     return { blockhash, lastValidBlockHeight };
+  }
+
+  async getRecentSignatures(
+    address: string,
+    limit = 5,
+  ): Promise<Array<{ signature: string; err: boolean | null }>> {
+    const res = await this.connection.getSignaturesForAddress(
+      new PublicKey(address),
+      { limit },
+      this.options.commitment as Finality,
+    );
+    return res.map((item) => ({
+      signature: item.signature,
+      err: item.err ? true : null,
+    }));
+  }
+
+  async getTransactionSender(signature: string, selfAddress: string): Promise<string | null> {
+    try {
+      const parsed = await this.connection.getParsedTransaction(signature, {
+        maxSupportedTransactionVersion: 0,
+        commitment: this.options.commitment as Finality,
+      });
+      const message = parsed?.transaction?.message;
+      if (!message || !('accountKeys' in message)) return null;
+
+      const keys = message.accountKeys as Array<{ pubkey: unknown; signer?: boolean }>;
+      const toBase58 = (p: unknown): string | null => {
+        if (typeof p === 'string') return p;
+        if (p && typeof p === 'object' && 'toBase58' in p) {
+          return (p as { toBase58(): string }).toBase58();
+        }
+        return null;
+      };
+
+      // The fee payer is the first account key; prefer the first external
+      // signer when the fee payer is the wallet itself.
+      const first = keys[0] ? toBase58(keys[0].pubkey) : null;
+      if (first && first !== selfAddress) return first;
+      for (const key of keys) {
+        if (!key.signer) continue;
+        const pub = toBase58(key.pubkey);
+        if (pub && pub !== selfAddress) return pub;
+      }
+      return null;
+    } catch {
+      return null; // best-effort only
+    }
   }
 }

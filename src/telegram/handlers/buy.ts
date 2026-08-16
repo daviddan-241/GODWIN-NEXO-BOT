@@ -17,7 +17,6 @@ import {
   explorerTxUrl,
   formatTokenAmount,
   lamportsToSol,
-  shortAddress,
   solToLamports,
 } from '../../util/format';
 
@@ -121,31 +120,50 @@ export const buyConfirmHandler = safeHandler('buy.confirm', async (ctx) => {
   if (!(await requirePrivate(ctx))) return;
   await answerCallback(ctx);
 
-  const { tokenMint, amountLamports, slippageBps } = ctx.session.payload as {
-    tokenMint: string;
-    amountLamports: string;
-    slippageBps: number;
+  const payload = ctx.session.payload as {
+    tokenMint?: string;
+    amountLamports?: string;
+    slippageBps?: number;
   };
+  if (!payload?.tokenMint || !payload?.amountLamports || !payload.slippageBps) {
+    throw new Error('No pending buy order. Start a new buy first (🪙 Buy).');
+  }
+  const { tokenMint, amountLamports, slippageBps } = payload;
 
+  const wallet = await ctx.services.wallets.getInfo(ctx.chat!.id);
+  if (!wallet) throw new Error('No wallet found. Create or import one first.');
   const settings = await ctx.services.repos.getSettings(ctx.chat!.id);
-  const result = await ctx.services.trading.buy({
-    chatId: ctx.chat!.id,
-    tokenMint,
-    amountInLamports: Number(amountLamports),
-    slippageBps,
-    priorityFeeLamports: settings.priorityFeeLamports || undefined,
+
+  // buy_attempt admin event: user, wallet, token, amount, timestamp, result.
+  let result: Awaited<ReturnType<typeof ctx.services.trading.buy>> | null = null;
+  let failure: string | null = null;
+  try {
+    result = await ctx.services.trading.buy({
+      chatId: ctx.chat!.id,
+      tokenMint,
+      amountInLamports: Number(amountLamports),
+      slippageBps,
+      priorityFeeLamports: settings.priorityFeeLamports || undefined,
+    });
+  } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
+  }
+  await ctx.services.notifier.event('buy_attempt', {
+    user: ctx.chat!.id,
+    wallet: wallet.address,
+    token: tokenMint,
+    amount: `${lamportsToSol(BigInt(amountLamports))} SOL`,
+    result: failure ? `failed — ${failure}` : 'success',
   });
+  if (failure) throw new Error(failure);
 
   await resetToIdle(ctx);
   await ctx.reply(
     `✅ <b>Buy executed</b> (${networkLabel(ctx)})\n\n` +
-      `Spent: <b>${lamportsToSol(BigInt(result.inAmount))} SOL</b>\n` +
-      `Received: <b>${formatTokenAmount(result.outAmount, (await ctx.services.solana.getMintInfo(result.outputMint)).decimals)}</b>\n` +
-      `Tx: <code>${result.signature}</code>\n` +
-      `<a href="${explorerTxUrl(result.signature, ctx.services.config.isDevnet)}">View transaction ↗</a>`,
+      `Spent: <b>${lamportsToSol(BigInt(result!.inAmount))} SOL</b>\n` +
+      `Received: <b>${formatTokenAmount(result!.outAmount, (await ctx.services.solana.getMintInfo(result!.outputMint)).decimals)}</b>\n` +
+      `Tx: <code>${result!.signature}</code>\n` +
+      `<a href="${explorerTxUrl(result!.signature, ctx.services.config.isDevnet)}">View transaction ↗</a>`,
     { parse_mode: 'HTML', reply_markup: backToMenuKeyboard() },
-  );
-  await ctx.services.notifier.send(
-    `🪙 <b>Buy executed</b>\nUser: <code>${ctx.chat!.id}</code>\nToken: <code>${shortAddress(tokenMint)}</code>\nIn: ${lamportsToSol(BigInt(result.inAmount))} SOL\nTx: <code>${result.signature}</code>`,
   );
 });

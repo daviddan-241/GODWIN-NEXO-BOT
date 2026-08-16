@@ -30,6 +30,7 @@ import {
   walletExportConfirmHandler,
   walletExportRevealHandler,
 } from './handlers/wallet';
+import { walletImportPromptHandler as importPromptHandler } from './handlers/wallet';
 import { showDepositHandler } from './handlers/deposit';
 import {
   withdrawStartHandler,
@@ -137,6 +138,7 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   bot.command('menu', (ctx) => menuHandler(ctx));
   bot.command('help', (ctx) => helpHandler(ctx));
   bot.command('cancel', (ctx) => cancelHandler(ctx));
+  bot.command('import', (ctx) => importPromptHandler(ctx));
   bot.command('wallet', (ctx) => showWalletHandler(ctx));
   bot.command('portfolio', (ctx) => showPortfolioHandler(ctx));
   bot.command('buy', (ctx) => buyStartHandler(ctx));

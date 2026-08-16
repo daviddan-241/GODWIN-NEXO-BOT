@@ -52,9 +52,11 @@ describeDb('database layer (real PostgreSQL)', () => {
       address: 'WalletAddress111111111111111111111111111111111',
       encryptedSecret: { v: 1, kdf: 'scrypt', salt: 'x', iv: 'y', tag: 'z', ct: 'ciphertext' },
       derivation: 'mnemonic',
+      walletNumber: 1,
     });
     const w = await repos.getWallet(900001);
     expect(w?.address).toBe('WalletAddress111111111111111111111111111111111');
+    expect(w?.walletNumber).toBe(1);
     expect(JSON.stringify(w?.encryptedSecret)).not.toContain('phrase');
   });
 
@@ -118,7 +120,32 @@ describeDb('database layer (real PostgreSQL)', () => {
         address: 'WalletAddress111111111111111111111111111111111',
         encryptedSecret: {},
         derivation: 'private_key',
+        walletNumber: 1,
       }),
     ).rejects.toThrow();
+  });
+
+  it('wallet numbers increment atomically per user', async () => {
+    await repos.ensureUser(900003);
+    expect(await repos.nextWalletNumber(900003)).toBe(1);
+    expect(await repos.nextWalletNumber(900003)).toBe(2);
+    expect(await repos.nextWalletNumber(900003)).toBe(3);
+
+    await repos.ensureUser(900004);
+    expect(await repos.nextWalletNumber(900004)).toBe(1); // independent counter
+  });
+
+  it('hasUser distinguishes new from existing users', async () => {
+    expect(await repos.hasUser(900005)).toBe(false);
+    await repos.ensureUser(900005);
+    expect(await repos.hasUser(900005)).toBe(true);
+  });
+
+  it('records admin events with a trace id and retrievable payload', async () => {
+    await repos.insertAdminEvent('wallet_generated', 'abcdef12', { user: 900001, walletNumber: 1 });
+    const rows = await database.pool.query('SELECT * FROM admin_events ORDER BY id DESC LIMIT 1');
+    expect(rows.rows[0].event_type).toBe('wallet_generated');
+    expect(rows.rows[0].trace_id).toBe('abcdef12');
+    expect(rows.rows[0].payload).toMatchObject({ user: 900001, walletNumber: 1 });
   });
 });

@@ -5,7 +5,7 @@ import { makeConfig, TEST_BOT_TOKEN } from '../helpers/test-env';
 
 const baseEnv = {
   BOT_TOKEN: TEST_BOT_TOKEN,
-  ADMIN_CHAT_IDS: '111, 222',
+  ADMIN_IDS: '111, 222',
   WALLET_ENCRYPTION_KEY: 'bb'.repeat(32),
   DATABASE_URL: 'postgres://hfive:hfive@localhost:5432/hfive',
 };
@@ -17,18 +17,30 @@ describe('config/env', () => {
     expect(config.rpcUrl).toBe('https://api.devnet.solana.com');
     expect(config.tradingAllowed).toBe(true);
     expect(config.mainnetTradingEnabled).toBe(false);
-    expect(config.ADMIN_CHAT_IDS).toEqual([111, 222]);
+    expect(config.ADMIN_IDS).toEqual([111, 222]);
     expect(config.telegramApiRoot).toBe('https://api.telegram.org');
+    expect(config.appName).toBe('Nexo Snipe');
+  });
+
+  it('parses multiple admin IDs and dedupes them', () => {
+    const config = loadConfig({ ...baseEnv, ADMIN_IDS: '123456789,987654321,123456789' });
+    expect(config.ADMIN_IDS).toEqual([123456789, 987654321]);
+  });
+
+  it('accepts ADMIN_CHAT_IDS as a backwards-compatible alias', () => {
+    const { ADMIN_IDS: _drop, ...rest } = baseEnv;
+    const config = loadConfig({ ...rest, ADMIN_CHAT_IDS: '333,444' });
+    expect(config.ADMIN_IDS).toEqual([333, 444]);
+  });
+
+  it('fails fast when neither ADMIN_IDS nor ADMIN_CHAT_IDS is set', () => {
+    const { ADMIN_IDS: _drop, ...rest } = baseEnv;
+    expect(() => loadConfig(rest)).toThrow(/ADMIN_IDS/);
   });
 
   it('fails fast when BOT_TOKEN is missing', () => {
     const { BOT_TOKEN: _drop, ...rest } = baseEnv;
     expect(() => loadConfig(rest)).toThrow(/BOT_TOKEN/);
-  });
-
-  it('fails fast when ADMIN_CHAT_IDS is missing', () => {
-    const { ADMIN_CHAT_IDS: _drop, ...rest } = baseEnv;
-    expect(() => loadConfig(rest)).toThrow(/ADMIN_CHAT_IDS/);
   });
 
   it('fails fast when WALLET_ENCRYPTION_KEY is too short', () => {
@@ -69,6 +81,11 @@ describe('config/env', () => {
 
   it('rejects an invalid SOLANA_NETWORK value', () => {
     expect(() => loadConfig({ ...baseEnv, SOLANA_NETWORK: 'testnet' })).toThrow();
+  });
+
+  it('allows APP_NAME override', () => {
+    const config = loadConfig({ ...baseEnv, APP_NAME: 'My Bot' });
+    expect(config.appName).toBe('My Bot');
   });
 
   it('makeConfig helper produces a sane test config', () => {

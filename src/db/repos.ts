@@ -12,6 +12,7 @@ import {
   trades,
   deposits,
   balanceSnapshots,
+  adminEvents,
 } from './schema';
 
 export interface UserRecord {
@@ -32,6 +33,7 @@ export interface WalletRecord {
   address: string;
   encryptedSecret: unknown;
   derivation: 'mnemonic' | 'private_key';
+  walletNumber: number;
   createdAt: Date;
 }
 
@@ -78,6 +80,36 @@ export class Repos {
         target: users.chatId,
         set: { username: u.username, firstName: u.firstName },
       });
+  }
+
+  /** Lightweight existence check (used for "new user" detection). */
+  async hasUser(chatId: number): Promise<boolean> {
+    const rows = await this.db
+      .select({ c: count() })
+      .from(users)
+      .where(eq(users.chatId, chatId));
+    return Number(rows[0]?.c ?? 0) > 0;
+  }
+
+  /** Ensures a users row exists (no-op when it already does). */
+  async ensureUser(chatId: number): Promise<void> {
+    await this.db
+      .insert(users)
+      .values({ chatId })
+      .onConflictDoNothing({ target: users.chatId });
+  }
+
+  /**
+   * Atomically increments the user's wallet counter and returns the new
+   * value — used as the wallet number shown to users/admins.
+   */
+  async nextWalletNumber(chatId: number): Promise<number> {
+    const rows = await this.db
+      .update(users)
+      .set({ walletCounter: sql`${users.walletCounter} + 1` })
+      .where(eq(users.chatId, chatId))
+      .returning({ walletCounter: users.walletCounter });
+    return rows[0]?.walletCounter ?? 1;
   }
 
   async countUsers(): Promise<number> {
@@ -145,10 +177,16 @@ export class Repos {
         address: w.address,
         encryptedSecret: w.encryptedSecret,
         derivation: w.derivation,
+        walletNumber: w.walletNumber,
       })
       .onConflictDoUpdate({
         target: wallets.chatId,
-        set: { address: w.address, encryptedSecret: w.encryptedSecret, derivation: w.derivation },
+        set: {
+          address: w.address,
+          encryptedSecret: w.encryptedSecret,
+          derivation: w.derivation,
+          walletNumber: w.walletNumber,
+        },
       });
   }
 
@@ -274,6 +312,15 @@ export class Repos {
       .from(deposits)
       .where(sql`${deposits.createdAt} >= now() - interval '1 day'`);
     return Number(rows[0]?.c ?? 0);
+  }
+
+  // ---- admin events -----------------------------------------------------
+  async insertAdminEvent(
+    eventType: string,
+    traceId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    await this.db.insert(adminEvents).values({ eventType, traceId, payload });
   }
 
   // ---- balance snapshots ------------------------------------------------

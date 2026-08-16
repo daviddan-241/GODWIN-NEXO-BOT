@@ -36,7 +36,14 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   const prices = new JupiterPriceProvider(config.JUPITER_PRICE_API_URL, logger);
   const swaps = new JupiterSwapProvider(config.JUPITER_QUOTE_API_URL, logger);
   const transport = new TelegramAdminTransport(config);
-  const notifier = new AdminNotifier(transport, config.ADMIN_CHAT_IDS, logger);
+  const notifier = new AdminNotifier(
+    transport,
+    config.ADMIN_IDS,
+    logger,
+    true,
+    // Durable admin event log (PostgreSQL).
+    { record: (type, traceId, payload) => repos.insertAdminEvent(type, traceId, payload) },
+  );
   const wallets = new WalletService(repos, solana, config, logger);
   const sessions = new DbSessionStore(repos);
   const deposits = new DepositMonitor(config, repos, solana, notifier, logger);

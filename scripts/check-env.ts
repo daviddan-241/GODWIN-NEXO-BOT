@@ -24,7 +24,7 @@ async function main(): Promise<void> {
     console.log(`  tradingAllowed        = ${config.tradingAllowed}`);
     console.log(`  commitment            = ${config.COMMITMENT}`);
     console.log(`  DB target             = ${safeDbTarget(config.DATABASE_URL)}`);
-    console.log(`  admin chat IDs        = ${config.ADMIN_CHAT_IDS.length} configured`);
+    console.log(`  admin IDs             = ${config.ADMIN_IDS.length} configured`);
     console.log(`  BOT_TOKEN             = set (${config.BOT_TOKEN.length} chars)`);
     console.log(`  WALLET_ENCRYPTION_KEY = set (${config.WALLET_ENCRYPTION_KEY.length} chars)`);
     console.log(`  PORT                  = ${config.PORT}`);

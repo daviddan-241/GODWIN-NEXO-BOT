@@ -4,7 +4,7 @@ import { safeHandler, resetToIdle } from './common';
 
 function isAdmin(ctx: BotContext): boolean {
   const chatId = ctx.chat?.id;
-  return chatId !== undefined && ctx.services.config.ADMIN_CHAT_IDS.includes(chatId);
+  return chatId !== undefined && ctx.services.config.ADMIN_IDS.includes(chatId);
 }
 
 export const statsHandler = safeHandler('admin.stats', async (ctx) => {

@@ -15,50 +15,68 @@ const boolFromString = (v: unknown) => {
   return undefined;
 };
 
-const EnvSchema = z.object({
-  BOT_TOKEN: z.string().min(1, 'BOT_TOKEN is required (get it from @BotFather)'),
-  ADMIN_CHAT_IDS: z
-    .string()
-    .min(1, 'ADMIN_CHAT_IDS is required (comma-separated Telegram chat IDs)')
-    .transform((s) =>
-      s
-        .split(',')
-        .map((x) => x.trim())
-        .filter(Boolean)
-        .map((x) => Number(x))
-        .filter((n) => Number.isFinite(n) && n !== 0),
-    ),
+const EnvSchema = z
+  .object({
+    BOT_TOKEN: z.string().min(1, 'BOT_TOKEN is required (get it from @BotFather)'),
 
-  SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('devnet'),
-  SOLANA_RPC_URL: z.string().url('SOLANA_RPC_URL must be a valid URL').optional(),
-  SOLANA_MAINNET_ENABLED: z.preprocess(boolFromString, z.boolean().default(false)),
-  COMMITMENT: z.enum(['confirmed', 'finalized']).default('confirmed'),
+    /**
+     * ADMIN_IDS: comma-separated Telegram chat IDs that receive admin
+     * notifications. ADMIN_CHAT_IDS is accepted as a backwards-compatible
+     * alias. At least one of them is required.
+     */
+    ADMIN_IDS: z.string().optional(),
+    ADMIN_CHAT_IDS: z.string().optional(),
 
-  WALLET_ENCRYPTION_KEY: z
-    .string()
-    .min(12, 'WALLET_ENCRYPTION_KEY is required — use `openssl rand -hex 32`'),
+    APP_NAME: z.string().min(1).max(32).default('Nexo Snipe'),
 
-  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (PostgreSQL connection string)'),
+    SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('devnet'),
+    SOLANA_RPC_URL: z.string().url('SOLANA_RPC_URL must be a valid URL').optional(),
+    SOLANA_MAINNET_ENABLED: z.preprocess(boolFromString, z.boolean().default(false)),
+    COMMITMENT: z.enum(['confirmed', 'finalized']).default('confirmed'),
 
-  JUPITER_QUOTE_API_URL: z.string().url().default('https://quote-api.jup.ag/v6'),
-  JUPITER_PRICE_API_URL: z.string().url().default('https://api.jup.ag/price/v2'),
-  DEFAULT_SLIPPAGE_BPS: z.coerce.number().int().min(1).max(10_000).default(100),
-  TRADING_MAX_SOL_PER_TRADE: z.coerce.number().positive().default(10),
-  DEPOSIT_POLL_INTERVAL_MS: z.coerce.number().int().min(5_000).default(30_000),
+    WALLET_ENCRYPTION_KEY: z
+      .string()
+      .min(12, 'WALLET_ENCRYPTION_KEY is required — use `openssl rand -hex 32`'),
 
-  PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+    DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (PostgreSQL connection string)'),
 
-  // Advanced/testing: override the Telegram Bot API root. Only used by the
-  // test suite and self-hosters; defaults to the official API.
-  TELEGRAM_API_ROOT: z.string().url().optional(),
-});
+    JUPITER_QUOTE_API_URL: z.string().url().default('https://quote-api.jup.ag/v6'),
+    JUPITER_PRICE_API_URL: z.string().url().default('https://api.jup.ag/price/v2'),
+    DEFAULT_SLIPPAGE_BPS: z.coerce.number().int().min(1).max(10_000).default(100),
+    TRADING_MAX_SOL_PER_TRADE: z.coerce.number().positive().default(10),
+    DEPOSIT_POLL_INTERVAL_MS: z.coerce.number().int().min(5_000).default(30_000),
+
+    PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
+    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+
+    // Advanced/testing: override the Telegram Bot API root. Only used by the
+    // test suite and self-hosters; defaults to the official API.
+    TELEGRAM_API_ROOT: z.string().url().optional(),
+  })
+  .superRefine((env, ctx) => {
+    if (!env.ADMIN_IDS && !env.ADMIN_CHAT_IDS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ADMIN_IDS is required (comma-separated Telegram chat IDs, e.g. 123456789,987654321)',
+        path: ['ADMIN_IDS'],
+      });
+    }
+  });
 
 export type AppConfig = ReturnType<typeof toAppConfig>;
 
+function parseAdminIds(env: z.infer<typeof EnvSchema>): number[] {
+  const raw = (env.ADMIN_IDS ?? env.ADMIN_CHAT_IDS ?? '')
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n !== 0);
+  return Array.from(new Set(raw)); // dedupe
+}
+
 function toAppConfig(env: z.infer<typeof EnvSchema>) {
-  const rpcUrl =
-    env.SOLANA_RPC_URL ?? DEFAULT_RPC_URLS[env.SOLANA_NETWORK];
+  const rpcUrl = env.SOLANA_RPC_URL ?? DEFAULT_RPC_URLS[env.SOLANA_NETWORK];
 
   /**
    * MAINNET SAFETY GATE
@@ -70,6 +88,8 @@ function toAppConfig(env: z.infer<typeof EnvSchema>) {
 
   return {
     ...env,
+    appName: env.APP_NAME,
+    ADMIN_IDS: parseAdminIds(env),
     rpcUrl,
     mainnetTradingEnabled,
     /** Trading is allowed on devnet by default; mainnet needs the explicit gate. */

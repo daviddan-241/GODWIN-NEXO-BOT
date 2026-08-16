@@ -64,7 +64,9 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
   const prices = new FakePriceProvider();
   const swaps = new FakeSwapProvider();
   const admin = new FakeAdminTransport();
-  const notifier = new AdminNotifier(admin, config.ADMIN_CHAT_IDS, logger);
+  const notifier = new AdminNotifier(admin, config.ADMIN_IDS, logger, true, {
+    record: (type, traceId, payload) => repos.insertAdminEvent(type, traceId, payload),
+  });
   const wallets = new WalletService(repos, solana, config, logger);
   const sessions = new DbSessionStore(repos);
   const deposits = new DepositMonitor(config, repos, solana, notifier, logger);

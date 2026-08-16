@@ -15,7 +15,7 @@ export const ADMIN_CHAT_ID = 777000001;
 export function makeConfig(overrides: Record<string, string> = {}): AppConfig {
   const env: NodeJS.ProcessEnv = {
     BOT_TOKEN: TEST_BOT_TOKEN,
-    ADMIN_CHAT_IDS: String(ADMIN_CHAT_ID),
+    ADMIN_IDS: String(ADMIN_CHAT_ID),
     SOLANA_NETWORK: 'devnet',
     SOLANA_MAINNET_ENABLED: 'false',
     WALLET_ENCRYPTION_KEY: TEST_WALLET_KEY,

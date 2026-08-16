@@ -1,11 +1,12 @@
 /**
- * Shared constants for the Hfive bot.
+ * Shared constants for the Nexo Snipe bot.
  * Values that must be configurable live in `config/env.ts`; these are
  * protocol-level constants that never change between environments.
  */
 
-export const APP_NAME = 'Hfive';
-export const APP_VERSION = '1.0.0';
+/** Product name — overridable via the APP_NAME environment variable. */
+export const APP_NAME = process.env.APP_NAME?.trim() || 'Nexo Snipe';
+export const APP_VERSION = '1.1.0';
 
 /** Wrapped-SOL mint (native SOL on SPL token rails). */
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';

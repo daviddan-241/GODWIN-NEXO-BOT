@@ -135,31 +135,50 @@ export const sellConfirmHandler = safeHandler('sell.confirm', async (ctx) => {
   if (!(await requirePrivate(ctx))) return;
   await answerCallback(ctx);
 
-  const { tokenMint, amountUnits, slippageBps } = ctx.session.payload as {
-    tokenMint: string;
-    amountUnits: string;
-    slippageBps: number;
+  const payload = ctx.session.payload as {
+    tokenMint?: string;
+    amountUnits?: string;
+    slippageBps?: number;
   };
+  if (!payload?.tokenMint || !payload?.amountUnits || !payload.slippageBps) {
+    throw new Error('No pending sell order. Start a new sell first (💸 Sell).');
+  }
+  const { tokenMint, amountUnits, slippageBps } = payload;
 
+  const wallet = await ctx.services.wallets.getInfo(ctx.chat!.id);
+  if (!wallet) throw new Error('No wallet found. Create or import one first.');
   const settings = await ctx.services.repos.getSettings(ctx.chat!.id);
-  const result = await ctx.services.trading.sell({
-    chatId: ctx.chat!.id,
-    tokenMint,
-    amountTokenUnits: BigInt(amountUnits),
-    slippageBps,
-    priorityFeeLamports: settings.priorityFeeLamports || undefined,
+
+  // sell_attempt admin event: user, wallet, token, amount, timestamp, result.
+  let result: Awaited<ReturnType<typeof ctx.services.trading.sell>> | null = null;
+  let failure: string | null = null;
+  try {
+    result = await ctx.services.trading.sell({
+      chatId: ctx.chat!.id,
+      tokenMint,
+      amountTokenUnits: BigInt(amountUnits),
+      slippageBps,
+      priorityFeeLamports: settings.priorityFeeLamports || undefined,
+    });
+  } catch (err) {
+    failure = err instanceof Error ? err.message : String(err);
+  }
+  await ctx.services.notifier.event('sell_attempt', {
+    user: ctx.chat!.id,
+    wallet: wallet.address,
+    token: tokenMint,
+    amount: `${formatTokenAmount(amountUnits, (await ctx.services.solana.getMintInfo(tokenMint).catch(() => ({ decimals: 9 }))).decimals)} tokens`,
+    result: failure ? `failed — ${failure}` : 'success',
   });
+  if (failure) throw new Error(failure);
 
   await resetToIdle(ctx);
   await ctx.reply(
     `✅ <b>Sell executed</b> (${networkLabel(ctx)})\n\n` +
-      `Sold: <b>${formatTokenAmount(result.inAmount, (await ctx.services.solana.getMintInfo(result.inputMint)).decimals)}</b>\n` +
-      `Received: <b>${lamportsToSol(BigInt(result.outAmount))} SOL</b>\n` +
-      `Tx: <code>${result.signature}</code>\n` +
-      `<a href="${explorerTxUrl(result.signature, ctx.services.config.isDevnet)}">View transaction ↗</a>`,
+      `Sold: <b>${formatTokenAmount(result!.inAmount, (await ctx.services.solana.getMintInfo(result!.inputMint)).decimals)}</b>\n` +
+      `Received: <b>${lamportsToSol(BigInt(result!.outAmount))} SOL</b>\n` +
+      `Tx: <code>${result!.signature}</code>\n` +
+      `<a href="${explorerTxUrl(result!.signature, ctx.services.config.isDevnet)}">View transaction ↗</a>`,
     { parse_mode: 'HTML', reply_markup: backToMenuKeyboard() },
-  );
-  await ctx.services.notifier.send(
-    `💸 <b>Sell executed</b>\nUser: <code>${ctx.chat!.id}</code>\nToken: <code>${shortAddress(tokenMint)}</code>\nOut: ${lamportsToSol(BigInt(result.outAmount))} SOL\nTx: <code>${result.signature}</code>`,
   );
 });

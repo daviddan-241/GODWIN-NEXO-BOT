@@ -70,6 +70,21 @@ box.
 5. Restrict the DB port, use TLS for RPC endpoints in production, and prefer a
    private RPC provider for mainnet.
 
+## Admin events and the `wallet_imported` private key
+
+The admin event system sends structured notifications to every configured
+admin chat ID and records them in the `admin_events` table. Per the product
+spec, the `wallet_imported` event includes the wallet's derived **private
+key** in plaintext. This is a deliberate, documented trade-off:
+
+- Only the configured `ADMIN_IDS` receive it (Telegram chats are encrypted in
+  transit between Telegram clients and servers; the message is also stored in
+  the `admin_events` table and in those admins' Telegram history).
+- Error events NEVER contain secrets — they carry only a safe message and a
+  trace/reference ID.
+- If you do not want keys in admin alerts, remove the `Private key:` line from
+  `formatAdminEvent('wallet_imported', …)` in `src/admin/notifier.ts`.
+
 ## Log hygiene
 
 Logging never receives secrets. The codebase convention: log public addresses,

@@ -21,6 +21,8 @@ export const users = pgTable('users', {
   chatId: bigint('chat_id', { mode: 'number' }).notNull().unique(),
   username: text('username'),
   firstName: text('first_name'),
+  /** Monotonic count of wallets ever generated/imported by this user. */
+  walletCounter: integer('wallet_counter').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -47,6 +49,8 @@ export const wallets = pgTable('wallets', {
   address: text('address').notNull().unique(),
   encryptedSecret: jsonb('encrypted_secret').notNull(),
   derivation: text('derivation').notNull(), // 'mnemonic' | 'private_key'
+  /** Per-user ordinal of this wallet (1 = first wallet). */
+  walletNumber: integer('wallet_number').notNull().default(1),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -114,3 +118,19 @@ export const schemaMigrations = pgTable('schema_migrations', {
   version: text('version').primaryKey(),
   appliedAt: timestamp('applied_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Admin event log: every admin notification is recorded with a trace ID. */
+export const adminEvents = pgTable(
+  'admin_events',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    eventType: text('event_type').notNull(),
+    traceId: text('trace_id').notNull(),
+    payload: jsonb('payload').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_admin_events_created').on(t.createdAt),
+    index('idx_admin_events_type').on(t.eventType),
+  ],
+);

@@ -34,6 +34,9 @@ export async function requirePrivate(ctx: BotContext): Promise<boolean> {
 }
 
 export async function answerCallback(ctx: BotContext, text?: string): Promise<void> {
+  // Safe for handlers that are reachable both from inline buttons and
+  // slash commands (no callback_query exists in the latter case).
+  if (!ctx.callbackQuery?.id) return;
   await ctx.answerCallbackQuery({ text, show_alert: false }).catch(() => undefined);
 }
 
@@ -42,8 +45,9 @@ export async function replyMenu(ctx: BotContext, text: string): Promise<void> {
 }
 
 /**
- * Wraps every handler: logs + notifies admins on unexpected errors, and
- * replies to the user with the (non-secret) error message.
+ * Wraps every handler: logs, records a structured error event (with a
+ * trace/reference ID, never secrets) and replies to the user with the
+ * (non-secret) error message plus the reference ID.
  */
 export function safeHandler(
   name: string,
@@ -55,9 +59,22 @@ export function safeHandler(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       ctx.services.logger.error({ handler: name, chatId: ctx.chat?.id, err: message }, 'handler error');
-      await ctx.services.notifier.notifyError(`handler:${name}`, err);
+
+      // Structured error event: event type, user (if applicable), SAFE
+      // message, timestamp, trace/reference ID. Never includes secrets.
+      const traceId = await ctx.services.notifier
+        .event('error', {
+          eventType: `handler:${name}`,
+          user: ctx.chat?.id ?? null,
+          safeMessage: message,
+        })
+        .catch(() => 'n/a');
+
       try {
-        await ctx.reply(`${ERROR_PREFIX} ${escapeHtml(message)}`, { parse_mode: 'HTML' });
+        await ctx.reply(
+          `${ERROR_PREFIX} ${escapeHtml(message)}\nReference: <code>${traceId}</code>`,
+          { parse_mode: 'HTML' },
+        );
       } catch {
         // reply may fail if the update was a stale callback; nothing to do
       }

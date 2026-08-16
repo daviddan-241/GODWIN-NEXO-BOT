@@ -1,4 +1,4 @@
-# Hfive — Solana Trading Telegram Bot
+# Nexo Snipe — Solana Trading Telegram Bot
 
 Production-ready Telegram bot for trading Solana SPL tokens with **real on-chain
 swaps** (Jupiter), **real RPC data**, **encrypted wallets** and a **PostgreSQL**
@@ -31,8 +31,21 @@ dependency on any external hosting platform.
 - **Deposit monitoring** — polls on-chain balances, records deposits, notifies
   users/admins; re-baselines after trades/withdrawals so internal moves are
   never misclassified
-- **Admin notification system** — fan-out to configured admin chat IDs with
-  retries (wallet events, deposits, trades, errors), `/stats`, `/broadcast`
+- **Admin event system** — structured events fan out to every configured
+  admin chat ID (`ADMIN_IDS=123456789,987654321`) with retries, and are
+  durably recorded in the `admin_events` table with a trace/reference ID:
+  - `new_user` — Telegram ID, username, first name, timestamp
+  - `wallet_generated` — user, wallet number, public address, timestamp
+    (always sent)
+  - `wallet_imported` — user, wallet number, public address, private key,
+    timestamp
+  - `deposit` — wallet, sender (if available), amount, token, transaction
+    signature (if available), timestamp
+  - `buy_attempt` / `sell_attempt` — user, wallet, token, amount, timestamp,
+    result
+  - `error` — event type, user (if applicable), safe error message,
+    timestamp, trace/reference ID. Never includes secrets.
+  - Plus `/stats` and `/broadcast` admin commands.
 - **HTTP health server** — `/live`, `/health`, `/ready` with DB + RPC +
   Telegram checks
 - **Structured logging** (pino) with secret redaction; secrets never logged
@@ -83,7 +96,7 @@ npm install
 # 3. Configure
 cp .env.example .env
 #   BOT_TOKEN=...                     (from @BotFather)
-#   ADMIN_CHAT_IDS=123456789          (your Telegram chat id)
+#   ADMIN_IDS=123456789,987654321     (your admin Telegram chat ids)
 #   DATABASE_URL=postgres://...:...@localhost:5432/hfive
 #   WALLET_ENCRYPTION_KEY=<openssl rand -hex 32>
 #   leave SOLANA_NETWORK=devnet
@@ -111,7 +124,8 @@ environment variables in production). See `.env.example` for the full list.
 | Variable | Required | Description |
 |---|---|---|
 | `BOT_TOKEN` | ✅ | Telegram bot token from @BotFather |
-| `ADMIN_CHAT_IDS` | ✅ | Comma-separated admin chat IDs (receive notifications) |
+| `ADMIN_IDS` | ✅ | Comma-separated admin chat IDs that receive admin notifications (supports multiple: `123456789,987654321`). `ADMIN_CHAT_IDS` is accepted as an alias. |
+| `APP_NAME` | — | Product name shown to users (default: `Nexo Snipe`) |
 | `WALLET_ENCRYPTION_KEY` | ✅ | 64-hex-char key (or long passphrase) that encrypts wallet secrets at rest |
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `SOLANA_NETWORK` | — | `devnet` (default) or `mainnet` |
@@ -190,6 +204,16 @@ runs migrations automatically on startup.
 The bot runs independently of anything else once deployed — it talks directly
 to the Telegram Bot API, your PostgreSQL, your Solana RPC endpoint and the
 Jupiter APIs.
+
+## Wallet import (`/import`)
+
+`/import` enters the import conversation state, validates the BIP39 seed
+phrase (12 or 24 words), derives the Solana keypair, determines the public
+address, encrypts and stores the secret, checks the real on-chain SOL balance
+and displays the resulting wallet. The plaintext mnemonic is never written to
+logs or the database. Admin chat(s) receive a `wallet_imported` event that
+includes the derived private key **by product design** — see SECURITY.md for
+the implications.
 
 ## Security model
 

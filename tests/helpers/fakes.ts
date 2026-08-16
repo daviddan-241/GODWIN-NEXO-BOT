@@ -16,9 +16,22 @@ export class FakeSolanaClient implements SolanaClient {
   existingAccounts = new Set<string>();
   sentTransactions: TxLike[] = [];
   sendResult = 'fake-signature-000000000000000000000000000000000000000000000000000000000000';
+  /** Recent signatures per address (for deposit-meta lookups). */
+  signatures = new Map<string, Array<{ signature: string; err: boolean | null }>>();
+  /** Sender per signature. */
+  senders = new Map<string, string>();
 
   async getHealth(): Promise<string> {
     return 'ok';
+  }
+  async getRecentSignatures(
+    address: string,
+    limit = 5,
+  ): Promise<Array<{ signature: string; err: boolean | null }>> {
+    return (this.signatures.get(address) ?? []).slice(0, limit);
+  }
+  async getTransactionSender(signature: string): Promise<string | null> {
+    return this.senders.get(signature) ?? null;
   }
   async getBalance(pubkey: string): Promise<number> {
     return this.balances.get(pubkey) ?? 0;

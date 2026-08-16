@@ -41,4 +41,18 @@ export interface SolanaClient {
   sendAndConfirmTransaction(tx: TxLike, signers?: Signer[]): Promise<string>;
   /** Latest blockhash (used by tests/verification). */
   getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }>;
+  /**
+   * Recent transaction signatures for an address (best-effort; used by the
+   * deposit monitor to enrich deposit events with tx info).
+   */
+  getRecentSignatures(
+    address: string,
+    limit?: number,
+  ): Promise<Array<{ signature: string; err: boolean | null }>>;
+  /**
+   * Best-effort sender extraction for a transaction signature: the fee
+   * payer (or first external signer) of the transaction, or null when the
+   * transaction cannot be parsed or the sender is the address itself.
+   */
+  getTransactionSender(signature: string, selfAddress: string): Promise<string | null>;
 }

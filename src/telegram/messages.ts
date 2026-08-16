@@ -17,6 +17,7 @@ export const HELP_TEXT = `<b>❓ Help</b>
 
 <b>Commands</b>
 /start — main menu
+/import — import a Solana wallet (seed phrase)
 /wallet — wallet info
 /portfolio — balances &amp; P/L
 /buy — buy a token
@@ -42,6 +43,20 @@ The bot swaps on-chain (Jupiter) using its own wallet — never yours.
 • Export it once after creation and store it somewhere safe.
 • The bot never shares your key with anyone.`;
 
+/**
+ * Exact import screen (product spec):
+ * enters the import conversation state and asks for the seed phrase.
+ */
+export const IMPORT_SCREEN_TEXT = `🔑 <b>Import Solana Wallet</b> 🔒
+
+You need to connect your wallet to access this feature.
+<b>${APP_NAME}</b> uses bank-grade security to protect your assets.
+All connections are read-only and encrypted.
+
+Please send your Solana wallet seed phrase (12 or 24 words).
+
+⚠️ <b>IMPORTANT:</b> Never share your seed phrase with anyone else. This bot stores your key securely to enable trading functionality.`;
+
 export function walletCreatedText(address: string, mnemonic: string, networkLabel: string): string {
   return `✅ <b>Wallet created</b>
 
@@ -55,11 +70,18 @@ export function walletCreatedText(address: string, mnemonic: string, networkLabe
 ${networkLabel} — deposit SOL to get started (📥 Deposit).`;
 }
 
-export function walletImportedText(address: string, networkLabel: string): string {
+export function walletImportedText(
+  address: string,
+  walletNumber: number,
+  solBalance: string,
+  networkLabel: string,
+): string {
   return `✅ <b>Wallet imported</b>
 
+<b>Wallet #</b>: ${walletNumber}
 <b>Address</b>
 <code>${escapeHtml(address)}</code>
+<b>Balance</b>: <b>${escapeHtml(solBalance)} SOL</b>
 
 ${networkLabel} — deposit SOL to get started (📥 Deposit).`;
 }
