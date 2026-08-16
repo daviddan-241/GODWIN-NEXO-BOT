@@ -17,7 +17,7 @@ let chatId = 1_000_000;
 /** Fresh app instance per test for full isolation (bot, mock API, DB). */
 async function getApp(overrides: Record<string, string> = {}): Promise<TestApp> {
   await app?.cleanup().catch(() => undefined);
-  app = await startTestApp({ MINIMUM_SOL: '0.001', ...overrides });
+  app = await startTestApp({ MIN_SOL_BALANCE: '0.001', ...overrides });
   return app;
 }
 
@@ -48,15 +48,16 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
   it('/start greets by name with the terminal screen, dashboard buttons and a new-user event', async () => {
     const { app: a, chatId: c } = await nextChat();
     a.mockBot.enqueueText(c, '/start', { id: c, first_name: 'Godwin', username: 'godwin_dev' });
-    const welcome = await a.mockBot.waitForText(c, 'Hello, Godwin!');
-    expect(welcome.text).toContain('NEXO TRADING TERMINAL');
+    const welcome = await a.mockBot.waitForText(c, '👋 Hello, Godwin!');
+    expect(welcome.text).toContain('🟢 NEXO TRADING TERMINAL');
     expect(welcome.text).toContain('MARKET FEED: CONNECTED');
-    expect(welcome.text).toContain('TRADE GATE: Wallet + balance check');
-    expect(welcome.text).toContain('Connect a wallet to get started');
+    expect(welcome.text).toContain('🔒 TRADE GATE: Wallet + balance check');
+    expect(welcome.text).toContain('✏️ Minimum: 0.001 SOL minimum');
+    expect(welcome.text).toContain('👉 Connect a wallet to get started.');
 
     // Dashboard buttons (exact layout):
     const kb = JSON.stringify(welcome.payload.reply_markup);
-    for (const btn of ['Portfolio', 'Refresh', 'Discover To...', 'Trade', 'Positions', 'Sniper', 'Copy Trade', 'Help']) {
+    for (const btn of ['💼 Portfolio', '🔄 Refresh', '🪙 Discover To…', '⚡ Trade', '📊 Positions', '🤖 Sniper', '🐋 Copy Trade', '❓ Help']) {
       expect(kb).toContain(btn);
     }
 
@@ -75,16 +76,15 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     await a.mockBot.waitForText(c, 'NEXO TRADING TERMINAL');
 
     a.mockBot.enqueueCallback(c, 'trade');
-    const tradeGate = await a.mockBot.waitForText(c, 'Wallet Required');
+    const tradeGate = await a.mockBot.waitForText(c, '⚠️ Wallet Required');
     expect(tradeGate.text).toContain('Please connect a wallet first to buy or sell tokens.');
+    expect(JSON.stringify(tradeGate.payload.reply_markup)).toContain('🏠 Dashboard');
 
     a.mockBot.enqueueCallback(c, 'sniper');
-    const sniperGate = await a.mockBot.waitForText(c, 'AI Sniper');
-    expect(sniperGate.text).toContain('You need a connected wallet to use AI Sniper.');
+    await a.mockBot.waitForText(c, '⚠️ You need a connected wallet to use AI Sniper.');
 
     a.mockBot.enqueueCallback(c, 'copytrade');
-    const copyGate = await a.mockBot.waitForText(c, 'Copy Trade');
-    expect(copyGate.text).toContain('You need a connected wallet to use Copy Trade.');
+    await a.mockBot.waitForText(c, '⚠️ You need a connected wallet to use Copy Trade.');
   });
 
   it('wallet generation: Wallet Created screen + wallet_generated admin event (always)', async () => {
@@ -121,7 +121,7 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     const screen = await a.mockBot.waitForText(c, 'Import Solana Wallet');
     expect(screen.text).toContain('🔑 Import Solana Wallet 🔒');
     expect(screen.text).toContain('You need to connect your wallet to access this feature.');
-    expect(screen.text).toContain('bank-grade security to protect your assets.');
+    expect(screen.text).toContain('Nexo Snipe uses bank-grade security to protect your assets.');
     expect(screen.text).toContain('All connections are read-only and encrypted.');
     expect(screen.text).toContain('Please send your Solana wallet seed phrase (12 or 24 words).');
     expect(screen.text).toContain('Never share your seed phrase with anyone else. This bot stores your key securely to enable trading functionality.');
@@ -144,6 +144,10 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(wallet.type).toBe('seed_imported');
     expect(JSON.stringify(wallet.encryptedSecret)).not.toContain(mnemonic.split(' ')[0]);
 
+    // SECURE DELETION: the seed-phrase message was deleted from the chat.
+    const deletions = a.mockBot.outgoing.filter((m) => m.method === 'deleteMessage' && m.chat_id === c);
+    expect(deletions.length).toBeGreaterThanOrEqual(1);
+
     // wallet_imported admin event includes wallet # and the private key:
     const evt = a.admin.messages.find((m) => m.text.includes('Wallet imported'));
     expect(evt).toBeTruthy();
@@ -165,15 +169,13 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     const { app: a, chatId: c } = await nextChat();
     const address = await startWithWallet(a, c);
     a.mockBot.enqueueCallback(c, 'wallet');
-    const pm = await a.mockBot.waitForText(c, 'PORTFOLIO MANAGEMENT');
+    const pm = await a.mockBot.waitForText(c, 'PORTFOLIO / WALLETS');
+    expect(pm.text).toContain('💰 YOUR WALLETS (1)');
+    expect(pm.text).toContain('🟢 SOL Wallet 1: 15.000000 SOL');
     expect(pm.text).toContain(address);
-    expect(JSON.stringify(pm.payload.reply_markup)).toContain('Generate Wallet');
-    expect(JSON.stringify(pm.payload.reply_markup)).toContain('Import Private Key');
-    expect(JSON.stringify(pm.payload.reply_markup)).toContain('Import Seed Phrase');
-    expect(JSON.stringify(pm.payload.reply_markup)).toContain('Check Status');
-    expect(JSON.stringify(pm.payload.reply_markup)).toContain('Withdraw');
-    expect(JSON.stringify(pm.payload.reply_markup)).toContain('Disconnect');
-    expect(JSON.stringify(pm.payload.reply_markup)).toContain('Back to Terminal');
+    for (const btn of ['🟣 Add SOL Wallet 2', '🔑 Import to Wallet…', '🧩 Seed → Wallet 2', '🟢 Connect Robinhood', '📈 Check Status', '🔄 Refresh Balance', '💸 Withdraw', '🔌 Disconnect Wallet', '⬅️ Back to Dashboard']) {
+      expect(JSON.stringify(pm.payload.reply_markup)).toContain(btn);
+    }
   });
 
   it('Discover flow: search a token, get the risk card, then a REAL confirmed buy + position', async () => {
@@ -189,7 +191,7 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
 
     // Discover
     a.mockBot.enqueueCallback(c, 'discover');
-    await a.mockBot.waitForText(c, 'DISCOVER TOKENS');
+    await a.mockBot.waitForText(c, '🪙 DISCOVER TOKENS');
     a.mockBot.enqueueText(c, 'USDC');
     const card = await a.mockBot.waitForText(c, 'Risk Analysis');
     expect(card.text).toContain('Contract:');
@@ -206,7 +208,7 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     const confirm = await a.mockBot.waitForText(c, 'CONFIRM BUY');
     expect(confirm.text).toContain('Amount: 0.1 SOL');
     expect(confirm.text).toContain('Slippage: 1%');
-    expect(JSON.stringify(confirm.payload.reply_markup)).toContain('Confirm Buy');
+    expect(JSON.stringify(confirm.payload.reply_markup)).toContain('✅ Confirm Buy');
 
     a.mockBot.enqueueCallback(c, 'confirm_buy');
     const executed = await a.mockBot.waitForText(c, 'BUY ORDER EXECUTED');
@@ -232,9 +234,10 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     await startWithWallet(a, c);
 
     a.mockBot.enqueueCallback(c, 'positions');
-    const empty = await a.mockBot.waitForText(c, 'POSITIONS');
+    const empty = await a.mockBot.waitForText(c, '📊 POSITIONS');
     expect(empty.text).toContain('You have no open positions.');
-    expect(JSON.stringify(empty.payload.reply_markup)).toContain('Open Trade Terminal');
+    expect(JSON.stringify(empty.payload.reply_markup)).toContain('⚡ Open Trade Terminal');
+    expect(JSON.stringify(empty.payload.reply_markup)).toContain('🏠 Back to Terminal');
 
     // Open a position directly through the real flow, then list:
     const bonk = a.tokens.makeToken({ address: OTHER_TOKEN_MINT, symbol: 'BONK', priceUsd: 0.00002 });
@@ -307,7 +310,7 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     await startWithWallet(a, c);
 
     a.mockBot.enqueueCallback(c, 'sniper');
-    const screen = await a.mockBot.waitForText(c, 'AI SNIPER');
+    const screen = await a.mockBot.waitForText(c, '🤖 AI SNIPER');
     expect(screen.text).toContain('🔴 Status: STANDBY');
     expect(screen.text).toContain('Position Size: 10 SOL');
     expect(screen.text).toContain('Anti-Rug: 🟢 ENABLED');
@@ -344,9 +347,13 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     await startWithWallet(a, c);
 
     a.mockBot.enqueueCallback(c, 'copytrade');
-    const screen = await a.mockBot.waitForText(c, 'COPY TRADING SYSTEM');
+    const screen = await a.mockBot.waitForText(c, '🐋 COPY TRADING SYSTEM');
     expect(screen.text).toContain('STATUS: STANDBY');
     expect(screen.text).toContain('Target Wallet: NOT SET');
+    expect(screen.text).toContain('Max SOL/Trade: 1');
+    expect(screen.text).toContain('Max Daily Exposure: 10 SOL');
+    expect(screen.text).toContain('Token Filter: ALL');
+    expect(screen.text).toContain('Mode: Buy + Sell');
 
     // Activating without a target is refused:
     a.mockBot.enqueueCallback(c, 'copytrade_start');
@@ -395,14 +402,14 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(a.admin.messages.find((m) => m.text.includes('Withdrawal confirmed'))).toBeTruthy();
   });
 
-  it('Disconnect removes the last wallet', async () => {
+  it('Disconnect deactivates the last wallet (soft disconnect)', async () => {
     const { app: a, chatId: c } = await nextChat();
     await startWithWallet(a, c);
 
     a.mockBot.enqueueCallback(c, 'wallet_disconnect');
     const done = await a.mockBot.waitForText(c, 'Wallet Disconnected');
     expect(done.text).toContain('Your wallet has been disconnected.');
-    expect(await a.services.repos.getWallets(c)).toHaveLength(0);
+    expect(await a.services.repos.getActiveWallets(c)).toHaveLength(0);
   });
 
   it('Help shows the NEXO CONTROL CENTER with commands and links', async () => {
@@ -411,7 +418,7 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     await a.mockBot.waitForText(c, 'NEXO TRADING TERMINAL');
     a.mockBot.enqueueCallback(c, 'help');
     const help = await a.mockBot.waitForText(c, 'NEXO CONTROL CENTER');
-    for (const line of ['/start - Open terminal', '/wallet - Manage portfolio wallets', '/generate - Create a new wallet', '/import - Import an existing wallet', '/status - Check wallet status', 'Non-Custodial', 'Support']) {
+    for (const line of ['/start — Open terminal', '/wallet — Manage portfolio wallets', '/generate — Create a new wallet', '/import — Import an existing wallet', '/status — Check wallet status', '🔐 Non-Custodial', 'Support:', 'Nexo - Your Wealth Platform for Digital Assets']) {
       expect(help.text).toContain(line);
     }
   });
@@ -444,8 +451,141 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(errorEvent!.text).not.toMatch(/mnemonic|private key|seed phrase/i);
   });
 
+  it('multi-wallet: trade picker lets the user choose the executing wallet', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    a.mockBot.enqueueText(c, '/start');
+    await a.mockBot.waitForText(c, 'NEXO TRADING TERMINAL');
+    // Generate two wallets
+    a.mockBot.enqueueCallback(c, 'wallet_add');
+    await a.mockBot.waitForText(c, 'Wallet Created');
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, 'wallet_add');
+    await a.mockBot.waitForText(c, 'Wallet Created');
+    a.mockBot.clearOutgoing();
+    const wallets = await a.services.repos.getWallets(c);
+    expect(wallets).toHaveLength(2);
+    // Fund only wallet 2 — a buy must succeed only when wallet 2 executes.
+    a.solana.balances.set(wallets[1].address, 15_000_000_000);
+    a.solana.mints.set(TEST_TOKEN_MINT, { decimals: 6, isInitialized: true });
+    const bonk = a.tokens.makeToken({ address: TEST_TOKEN_MINT, symbol: 'USDC' });
+    a.tokens.register(bonk);
+    await a.services.repos.updateSniperSettings(c, { positionSize: 0.1 });
+    a.swaps.quotes.push(makeQuote());
+
+    a.mockBot.enqueueCallback(c, 'buy_sol');
+    const pick = await a.mockBot.waitForText(c, 'Which connected wallet should execute this trade?');
+    expect(JSON.stringify(pick.payload.reply_markup)).toContain(`tw_${wallets[0].address}`);
+    expect(JSON.stringify(pick.payload.reply_markup)).toContain(`tw_${wallets[1].address}`);
+
+    // Pick wallet 2 (the funded one).
+    a.mockBot.enqueueCallback(c, `tw_${wallets[1].address}`);
+    await a.mockBot.waitForText(c, 'Send the token contract address you want to buy');
+    a.mockBot.enqueueText(c, TEST_TOKEN_MINT);
+    const confirm = await a.mockBot.waitForText(c, 'CONFIRM BUY');
+    expect(confirm.text).toContain(`SOL Wallet ${wallets[1].walletNumber}`);
+    a.mockBot.enqueueCallback(c, 'confirm_buy');
+    await a.mockBot.waitForText(c, 'BUY ORDER EXECUTED');
+    expect(a.solana.sentTransactions).toHaveLength(1);
+  });
+
+  it('soft disconnect marks the wallet inactive without deleting it', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    await startWithWallet(a, c);
+
+    a.mockBot.enqueueCallback(c, 'wallet_disconnect');
+    await a.mockBot.waitForText(c, 'Wallet Disconnected');
+
+    // Row kept (audit), marked inactive:
+    const all = await a.services.repos.getWallets(c);
+    expect(all).toHaveLength(1);
+    expect(all[0].active).toBe(false);
+    expect(await a.services.repos.getActiveWallets(c)).toHaveLength(0);
+
+    // Portfolio shows zero connected wallets:
+    a.mockBot.enqueueCallback(c, 'wallet');
+    const pm = await a.mockBot.waitForText(c, '💰 YOUR WALLETS (0)');
+    expect(pm.text).toContain('No wallets connected.');
+  });
+
+  it('copy trade: limits wizard configures max/trade, daily exposure, slippage and token filter', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    await startWithWallet(a, c);
+
+    a.mockBot.enqueueCallback(c, 'copytrade');
+    await a.mockBot.waitForText(c, '🐋 COPY TRADING SYSTEM');
+
+    // Configure target first
+    a.mockBot.enqueueCallback(c, 'copytrade_add');
+    await a.mockBot.waitForText(c, 'CONFIGURE TARGET WALLET');
+    a.mockBot.enqueueText(c, OTHER_TOKEN_MINT);
+    await a.mockBot.waitForText(c, 'Added whale wallet to copy!');
+
+    // Limits wizard: max per trade -> max daily -> slippage -> token filter
+    a.mockBot.enqueueCallback(c, 'copytrade_limits');
+    await a.mockBot.waitForText(c, 'Set Max SOL Per Trade');
+    a.mockBot.enqueueText(c, '0.5');
+    await a.mockBot.waitForText(c, 'Set Max Daily Exposure');
+    a.mockBot.enqueueText(c, '4');
+    await a.mockBot.waitForText(c, 'Set Copy Slippage');
+    a.mockBot.enqueueText(c, '12');
+    await a.mockBot.waitForText(c, 'Set Token Filter');
+    a.mockBot.enqueueText(c, TEST_TOKEN_MINT);
+    await a.mockBot.waitForText(c, 'Copy trade limits saved.');
+
+    const cfg = await a.services.repos.getCopyTrade(c);
+    expect(cfg.maxSolPerTrade).toBe(0.5);
+    expect(cfg.maxDailySol).toBe(4);
+    expect(cfg.slippage).toBe(12);
+    expect(cfg.tokenFilter).toBe(TEST_TOKEN_MINT);
+
+    // Mode toggle
+    a.mockBot.enqueueCallback(c, 'copytrade_mode');
+    await a.mockBot.waitForText(c, 'Mode: Buy Only');
+    expect((await a.services.repos.getCopyTrade(c)).mode).toBe('buy_only');
+
+    // The screen reflects the new configuration
+    const screen = a.mockBot.outgoing
+      .filter((m) => m.chat_id === c && m.text?.includes('COPY TRADING SYSTEM'))
+      .pop();
+    expect(screen!.text).toContain('Max SOL/Trade: 0.5');
+    expect(screen!.text).toContain('Max Daily Exposure: 4 SOL');
+    expect(screen!.text).toContain('Slippage: 12%');
+  });
+
+  it('stale conversations time out back to idle', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    a.mockBot.enqueueText(c, '/start');
+    await a.mockBot.waitForText(c, 'NEXO TRADING TERMINAL');
+
+    // Enter the import state…
+    a.mockBot.enqueueText(c, '/import');
+    await a.mockBot.waitForText(c, 'Import Solana Wallet');
+    expect((await a.services.repos.getSession(c)).state).toBe('importing_wallet');
+
+    // …age it beyond CONVERSATION_TIMEOUT_MS…
+    await a.database.pool.query(
+      "UPDATE bot_sessions SET updated_at = now() - interval '1 day' WHERE chat_id = $1",
+      [String(c)],
+    );
+
+    // …and the next message is treated as idle chatter (dashboard hint).
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueText(c, 'hello again');
+    await a.mockBot.waitForText(c, '👋 Hello');
+    expect((await a.services.repos.getSession(c)).state).toBe('idle');
+  });
+
+  it('Connect Robinhood answers honestly (feature not available)', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    a.mockBot.enqueueText(c, '/start');
+    await a.mockBot.waitForText(c, 'NEXO TRADING TERMINAL');
+    a.mockBot.enqueueCallback(c, 'wallet_robinhood');
+    const msg = await a.mockBot.waitForText(c, 'Connect Robinhood');
+    expect(msg.text).toContain('not available for Solana self-custody yet');
+  });
+
   it('mainnet gate: no trade can execute without explicit mainnet config', async () => {
-    const app2 = await startTestApp({ SOLANA_NETWORK: 'mainnet', SOLANA_MAINNET_ENABLED: 'false', MINIMUM_SOL: '0.001' });
+    const app2 = await startTestApp({ SOLANA_NETWORK: 'mainnet', SOLANA_MAINNET_ENABLED: 'false', MIN_SOL_BALANCE: '0.001' });
     try {
       const c = 2_000_001;
       app2.mockBot.enqueueText(c, '/start');

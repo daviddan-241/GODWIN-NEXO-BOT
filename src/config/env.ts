@@ -34,12 +34,33 @@ const EnvSchema = z
     SUPPORT_USERNAME: z.string().default('ainexobotsupport'),
     WEBSITE_URL: z.string().default('https://t.co/z1XgC7Zd6d'),
     TWITTER_URL: z.string().default('https://x.com/Nexo?s=20'),
-    /** Minimum SOL balance required to trade (trade gate). */
-    MINIMUM_SOL: z.string().regex(/^\d+(\.\d+)?$/, 'MINIMUM_SOL must be a number').default('3.0000'),
+    /** Trade gate: minimum SOL balance required to trade. */
+    MIN_SOL_BALANCE: z.string().regex(/^\d+(\.\d+)?$/, 'MIN_SOL_BALANCE must be a number').optional(),
+    /** Backwards-compatible alias of MIN_SOL_BALANCE. */
+    MINIMUM_SOL: z.string().regex(/^\d+(\.\d+)?$/, 'MINIMUM_SOL must be a number').optional(),
 
     /** Market data APIs. */
     COINGECKO_API_URL: z.string().url().default('https://api.coingecko.com/api/v3'),
     DEXSCREENER_API_URL: z.string().url().default('https://api.dexscreener.com'),
+
+    /** Optional WebSocket endpoint for account-change driven deposit checks. */
+    SOLANA_WS_URL: z.string().url('SOLANA_WS_URL must be a valid URL').optional(),
+
+    /** Optional owner seed phrase: derived at startup, address logged only. */
+    SEED_PHRASE: z.string().optional(),
+
+    /** Health/UptimeRobot server. */
+    HEALTHCHECK_ENABLED: z.preprocess(boolFromString, z.boolean().default(true)),
+
+    /** Deposit monitor: consecutive polls a delta must persist before notify. */
+    DEPOSIT_CONFIRMATION_POLLS: z.coerce.number().int().min(1).max(10).default(2),
+
+    /** Conversation FSM timeout (ms) — stale flows reset to idle. */
+    CONVERSATION_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(600_000),
+
+    /** Per-chat rate limiting. */
+    RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(15),
+    RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(100).default(10_000),
 
     SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('devnet'),
     SOLANA_RPC_URL: z.string().url('SOLANA_RPC_URL must be a valid URL').optional(),
@@ -48,7 +69,13 @@ const EnvSchema = z
 
     WALLET_ENCRYPTION_KEY: z
       .string()
-      .min(12, 'WALLET_ENCRYPTION_KEY is required — use `openssl rand -hex 32`'),
+      .min(12, 'ENCRYPTION_KEY is required — use `openssl rand -hex 32`')
+      .optional(),
+    /** Preferred name (v2 spec). WALLET_ENCRYPTION_KEY is an alias. */
+    ENCRYPTION_KEY: z
+      .string()
+      .min(12, 'ENCRYPTION_KEY is required — use `openssl rand -hex 32`')
+      .optional(),
 
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (PostgreSQL connection string)'),
 
@@ -72,6 +99,13 @@ const EnvSchema = z
         code: z.ZodIssueCode.custom,
         message: 'ADMIN_IDS is required (comma-separated Telegram chat IDs, e.g. 123456789,987654321)',
         path: ['ADMIN_IDS'],
+      });
+    }
+    if (!env.ENCRYPTION_KEY && !env.WALLET_ENCRYPTION_KEY) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'ENCRYPTION_KEY is required — use `openssl rand -hex 32`',
+        path: ['ENCRYPTION_KEY'],
       });
     }
   });
@@ -103,6 +137,10 @@ function toAppConfig(env: z.infer<typeof EnvSchema>) {
     ...env,
     appName: env.APP_NAME,
     ADMIN_IDS: parseAdminIds(env),
+    /** Wallet encryption key: ENCRYPTION_KEY (preferred) or its alias. */
+    WALLET_ENCRYPTION_KEY: env.ENCRYPTION_KEY ?? env.WALLET_ENCRYPTION_KEY ?? '',
+    /** Trade gate minimum (v2 name, MINIMUM_SOL kept as alias). */
+    MIN_SOL_BALANCE: env.MIN_SOL_BALANCE ?? env.MINIMUM_SOL ?? '3.0000',
     rpcUrl,
     mainnetTradingEnabled,
     /** Trading is allowed on devnet by default; mainnet needs the explicit gate. */

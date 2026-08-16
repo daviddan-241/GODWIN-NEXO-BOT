@@ -21,6 +21,13 @@ export class FakeSolanaClient implements SolanaClient {
   signatures = new Map<string, Array<{ signature: string; err: boolean | null }>>();
   /** Sender per signature. */
   senders = new Map<string, string>();
+  /** Fake slot counter. */
+  slot = 200_000_000;
+
+  async getSlot(): Promise<number> {
+    this.slot += 400;
+    return this.slot;
+  }
 
   async getHealth(): Promise<string> {
     return 'ok';

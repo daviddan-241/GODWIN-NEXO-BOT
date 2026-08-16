@@ -190,6 +190,7 @@ export function formatAdminEvent(
         line('Amount', String(payload.amount)) + '\n' +
         `Token: <code>${payload.token}</code>\n` +
         `Tx: <code>${payload.signature ?? 'n/a'}</code>\n` +
+        `Slot: <code>${payload.slot ?? 'n/a'}</code>\n` +
         `Time: ${fmtTime}`
       );
     case 'buy_attempt':

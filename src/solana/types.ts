@@ -10,6 +10,8 @@ export interface TokenAccountInfo {
   amount: string; // raw base units
   decimals: number;
   uiAmount: number | null;
+  /** The token account's own address (optional — SPL deposit reporting). */
+  account?: string;
 }
 
 export interface MintInfo {
@@ -41,6 +43,8 @@ export interface SolanaClient {
   sendAndConfirmTransaction(tx: TxLike, signers?: Signer[]): Promise<string>;
   /** Latest blockhash (used by tests/verification). */
   getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }>;
+  /** Current slot (deposit reporting). */
+  getSlot(): Promise<number>;
   /**
    * Recent transaction signatures for an address (best-effort; used by the
    * deposit monitor to enrich deposit events with tx info).

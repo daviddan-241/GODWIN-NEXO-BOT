@@ -12,7 +12,7 @@ describe('telegram/session (memory store)', () => {
 
   it('persists state and payload', async () => {
     const store = new MemorySessionStore();
-    await store.save(42, { state: 'awaiting_buy_token', payload: { tokenMint: 'mint' } });
+    await store.save(42, { state: 'awaiting_buy_token', payload: { tokenMint: 'mint' }, updatedAt: new Date() });
     const s = await store.get(42);
     expect(s.state).toBe('awaiting_buy_token');
     expect(s.payload.tokenMint).toBe('mint');
@@ -20,14 +20,14 @@ describe('telegram/session (memory store)', () => {
 
   it('isolates chats from each other', async () => {
     const store = new MemorySessionStore();
-    await store.save(1, { state: 'a', payload: {} });
+    await store.save(1, { state: 'a', payload: {}, updatedAt: new Date() });
     const other = await store.get(2);
     expect(other.state).toBe(IDLE_STATE);
   });
 
   it('reset returns to idle', async () => {
     const store = new MemorySessionStore();
-    await store.save(1, { state: 'awaiting_sell_pct', payload: { x: 1 } });
+    await store.save(1, { state: 'awaiting_sell_pct', payload: { x: 1 }, updatedAt: new Date() });
     await store.reset(1);
     const s = await store.get(1);
     expect(s.state).toBe(IDLE_STATE);

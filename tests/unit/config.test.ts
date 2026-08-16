@@ -43,8 +43,35 @@ describe('config/env', () => {
     expect(() => loadConfig(rest)).toThrow(/BOT_TOKEN/);
   });
 
-  it('fails fast when WALLET_ENCRYPTION_KEY is too short', () => {
-    expect(() => loadConfig({ ...baseEnv, WALLET_ENCRYPTION_KEY: 'short' })).toThrow(/WALLET_ENCRYPTION_KEY/);
+  it('fails fast when the encryption key is too short', () => {
+    expect(() => loadConfig({ ...baseEnv, WALLET_ENCRYPTION_KEY: 'short' })).toThrow(/ENCRYPTION_KEY/);
+    expect(() => loadConfig({ ...baseEnv, ENCRYPTION_KEY: 'short' })).toThrow(/ENCRYPTION_KEY/);
+  });
+
+  it('fails fast when no encryption key is provided at all', () => {
+    const { WALLET_ENCRYPTION_KEY: _drop, ...rest } = baseEnv;
+    expect(() => loadConfig(rest)).toThrow(/ENCRYPTION_KEY/);
+  });
+
+  it('accepts ENCRYPTION_KEY as the v2 name (WALLET_ENCRYPTION_KEY alias)', () => {
+    const { WALLET_ENCRYPTION_KEY: _drop, ...rest } = baseEnv;
+    const config = loadConfig({ ...rest, ENCRYPTION_KEY: 'cc'.repeat(32) });
+    expect(config.WALLET_ENCRYPTION_KEY).toBe('cc'.repeat(32));
+  });
+
+  it('resolves MIN_SOL_BALANCE with MINIMUM_SOL as alias', () => {
+    const a = loadConfig({ ...baseEnv, MIN_SOL_BALANCE: '5.5000' });
+    expect(a.MIN_SOL_BALANCE).toBe('5.5000');
+    const b = loadConfig({ ...baseEnv, MINIMUM_SOL: '7.25' });
+    expect(b.MIN_SOL_BALANCE).toBe('7.25');
+    const c = loadConfig({ ...baseEnv });
+    expect(c.MIN_SOL_BALANCE).toBe('3.0000');
+  });
+
+  it('supports SOLANA_WS_URL and HEALTHCHECK_ENABLED', () => {
+    const config = loadConfig({ ...baseEnv, SOLANA_WS_URL: 'wss://ws.example.com/', HEALTHCHECK_ENABLED: 'false' });
+    expect(config.SOLANA_WS_URL).toBe('wss://ws.example.com/');
+    expect(config.HEALTHCHECK_ENABLED).toBe(false);
   });
 
   it('fails fast when DATABASE_URL is missing', () => {

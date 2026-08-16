@@ -82,6 +82,7 @@ export class ConnectionSolanaClient implements SolanaClient {
         amount: info.tokenAmount.amount,
         decimals: info.tokenAmount.decimals,
         uiAmount: info.tokenAmount.uiAmount,
+        account: item.pubkey.toBase58(),
       };
     });
   }
@@ -142,6 +143,10 @@ export class ConnectionSolanaClient implements SolanaClient {
   async getLatestBlockhash(): Promise<{ blockhash: string; lastValidBlockHeight: number }> {
     const { blockhash, lastValidBlockHeight } = await this.connection.getLatestBlockhash(this.options.commitment);
     return { blockhash, lastValidBlockHeight };
+  }
+
+  async getSlot(): Promise<number> {
+    return this.connection.getSlot(this.options.commitment);
   }
 
   async getRecentSignatures(

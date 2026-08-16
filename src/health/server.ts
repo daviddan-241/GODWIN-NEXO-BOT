@@ -46,12 +46,20 @@ export function createHealthServer(checks: HealthChecks, logger: Logger): http.S
   const server = http.createServer(async (req, res) => {
     const path = (req.url ?? '/').split('?')[0];
 
+    if (path === '/' || path === '/health') {
+      // UptimeRobot-compatible plain "OK" (the bot process keeps running
+      // independently of health-check requests).
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('OK');
+      return;
+    }
+
     if (path === '/live') {
       json(res, 200, { status: 'ok', app: APP_NAME, version: APP_VERSION });
       return;
     }
 
-    if (path === '/health' || path === '/ready' || path === '/') {
+    if (path === '/ready') {
       const [database, rpc, bot] = await Promise.all([
         runCheck('database', checks.database),
         runCheck('rpc', checks.rpc),
@@ -60,7 +68,7 @@ export function createHealthServer(checks: HealthChecks, logger: Logger): http.S
 
       const criticalOk = database.ok && rpc.ok;
       const allOk = criticalOk && bot.ok;
-      const code = path === '/ready' ? (allOk ? 200 : 503) : criticalOk ? 200 : 503;
+      const code = allOk ? 200 : 503;
       const status = allOk ? 'ok' : criticalOk ? 'degraded' : 'unavailable';
 
       json(res, code, {

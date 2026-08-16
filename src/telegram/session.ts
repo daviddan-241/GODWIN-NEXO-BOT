@@ -10,6 +10,8 @@ import type { Repos } from '../db/repos';
 export interface SessionData {
   state: string;
   payload: Record<string, unknown>;
+  /** Last persisted timestamp (conversation timeouts). */
+  updatedAt: Date;
 }
 
 export interface SessionStore {
@@ -25,7 +27,11 @@ export class DbSessionStore implements SessionStore {
 
   async get(chatId: number): Promise<SessionData> {
     const s = await this.repos.getSession(chatId);
-    return { state: s.state, payload: (s.payload ?? {}) as Record<string, unknown> };
+    return {
+      state: s.state,
+      payload: (s.payload ?? {}) as Record<string, unknown>,
+      updatedAt: s.updatedAt ?? new Date(),
+    };
   }
 
   async save(chatId: number, session: SessionData): Promise<void> {
@@ -42,11 +48,11 @@ export class MemorySessionStore implements SessionStore {
   private map = new Map<number, SessionData>();
 
   async get(chatId: number): Promise<SessionData> {
-    return this.map.get(chatId) ?? { state: IDLE_STATE, payload: {} };
+    return this.map.get(chatId) ?? { state: IDLE_STATE, payload: {}, updatedAt: new Date() };
   }
 
   async save(chatId: number, session: SessionData): Promise<void> {
-    this.map.set(chatId, { ...session, payload: { ...session.payload } });
+    this.map.set(chatId, { ...session, payload: { ...session.payload }, updatedAt: new Date() });
   }
 
   async reset(chatId: number): Promise<void> {

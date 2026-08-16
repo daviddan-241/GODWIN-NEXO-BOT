@@ -57,6 +57,32 @@ Real mainnet transactions require **both** `SOLANA_NETWORK=mainnet` and
 Devnet is the default and the only mode where trading is enabled out of the
 box.
 
+## Additional protections (v2)
+
+- **Rate limiting** — per-chat sliding window (`RATE_LIMIT_MAX` /
+  `RATE_LIMIT_WINDOW_MS`) drops floods before handlers run.
+- **Conversation timeouts** — flows older than `CONVERSATION_TIMEOUT_MS`
+  reset to idle, so stale states cannot be re-triggered.
+- **Secure deletion** — the user's seed-phrase/private-key message is
+  deleted from the Telegram chat immediately after import.
+- **Deposit confirmation threshold** — deposits are recorded/notified only
+  after the delta persists across `DEPOSIT_CONFIRMATION_POLLS` consecutive
+  polls at the configured commitment (finalized = strongest), reducing
+  reorg false positives.
+- **RPC timeout/retry** — all RPC calls retry with backoff and bounded
+  timeouts; swap confirmation is awaited before any success is reported.
+
+### Non-custodial wording caveat
+
+The help screen states "NEXO is fully non-custodial. We never hold, access,
+or control your funds." (exact screenshot wording). In this architecture the
+bot holds encrypted signing material server-side and signs transactions on
+the user's behalf — so strictly speaking the bot operator COULD act on
+stored wallets. The encryption at rest and the security model above bound
+that capability, but the claim is only fully accurate if the bot never
+receives private keys (external-wallet signing). Keep this in mind when
+operating the bot with real funds.
+
 ## Operational hygiene
 
 1. Generate `WALLET_ENCRYPTION_KEY` with `openssl rand -hex 32`.

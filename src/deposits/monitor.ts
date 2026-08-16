@@ -41,6 +41,13 @@ export class DepositMonitor {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
   private stopped = false;
+  /**
+   * Positive deltas awaiting confirmation: a deposit is recorded and
+   * notified only after the delta persists across N consecutive polls
+   * (DEPOSIT_CONFIRMATION_POLLS) at the configured RPC commitment, to
+   * avoid false positives from reorgs/rollbacks.
+   */
+  private pending = new Map<string, { mint: string; amount: string; polls: number }>();
 
   /**
    * Called when a deposit is detected so the USER can be notified
@@ -95,7 +102,7 @@ export class DepositMonitor {
     if (this.running) return;
     this.running = true;
     try {
-      const wallets = await this.repos.allWallets();
+      const wallets = (await this.repos.allWallets()).filter((w) => w.active !== false);
       for (const wallet of wallets) {
         try {
           await this.checkWallet(wallet.chatId, wallet.address);
@@ -123,59 +130,87 @@ export class DepositMonitor {
     const prev = await this.repos.getSnapshots(chatId, address);
     const firstRun = Object.keys(prev).length === 0;
 
+    const requiredPolls = this.config.DEPOSIT_CONFIRMATION_POLLS;
     const diffs = diffSnapshots(prev, curr);
+    let skipSnapshotSave = false; // true while any delta awaits confirmation
+
     for (const diff of diffs) {
+      const key = `${chatId}|${address}|${diff.mint}`;
+      const pending = this.pending.get(key);
+
       if (diff.delta > 0n) {
         if (diff.delta < BigInt(DEPOSIT_DUST_LAMPORTS)) continue; // ignore dust
-        if (firstRun) {
-          // No reliable baseline yet: the initial balance cannot be
-          // attributed to a fresh deposit, so record nothing (wallets are
-          // re-baselined at creation, so this only affects pre-existing
-          // wallets seen for the first time).
-          continue;
+        if (firstRun) continue; // baseline only — never a deposit
+
+        if (pending && BigInt(pending.amount) <= diff.delta) {
+          const polls = pending.polls + 1;
+          if (polls >= requiredPolls) {
+            // CONFIRMED: the delta persisted across the required polls.
+            this.pending.delete(key);
+            await this.recordDeposit(chatId, address, diff, curr);
+          } else {
+            pending.polls = polls;
+            skipSnapshotSave = true;
+          }
+        } else if (pending && BigInt(pending.amount) > diff.delta) {
+          // Shrank since the last poll — reorg/partial: restart counting.
+          pending.amount = diff.delta.toString();
+          pending.polls = 1;
+          skipSnapshotSave = true;
+        } else {
+          this.pending.set(key, { mint: diff.mint, amount: diff.delta.toString(), polls: 1 });
+          skipSnapshotSave = true;
         }
-        const display = diff.mint === WSOL_MINT
-          ? `${lamportsToSol(diff.delta)} SOL`
-          : `${formatTokenAmount(diff.delta.toString(), await this.decimalsOf(diff.mint))} tokens`;
-        await this.repos.insertDeposit({
-          chatId,
-          mint: diff.mint,
-          amount: diff.delta.toString(),
-        });
-        this.logger.info(
-          { chatId, mint: diff.mint, amount: diff.delta.toString() },
-          'deposit detected',
-        );
-
-        // Best-effort enrichment: latest tx signature + sender (if the
-        // chain exposes them) for the admin deposit event.
-        const meta = await this.findDepositMeta(address);
-
-        await this.notifier.event('deposit', {
-          wallet: address,
-          sender: meta.sender ?? 'unknown',
-          amount: display,
-          token: diff.mint === WSOL_MINT ? 'SOL' : shortAddress(diff.mint),
-          signature: meta.signature ?? 'n/a',
-          user: chatId,
-        });
-
-        if (diff.mint === WSOL_MINT) {
-          await this.onUserDeposit?.(
-            chatId,
-            address,
-            Number(diff.delta) / 1e9,
-            Number(curr[WSOL_MINT]) / 1e9,
-          );
-        }
-      } else {
-        // Outflow — normal wallet activity (trades/withdrawals are
-        // re-baselined, so this is informational only).
-        this.logger.debug({ chatId, mint: diff.mint, delta: diff.delta.toString() }, 'balance outflow');
+      } else if (pending) {
+        // Outflow cancels any pending inflow confirmation.
+        this.pending.delete(key);
       }
     }
 
-    await this.repos.saveSnapshots(chatId, address, curr);
+    if (!skipSnapshotSave) {
+      await this.repos.saveSnapshots(chatId, address, curr);
+    }
+    await this.repos.updateWalletMeta(chatId, address, { touchBalanceCheck: true });
+  }
+
+  private async recordDeposit(
+    chatId: number,
+    address: string,
+    diff: BalanceDiff,
+    curr: Record<string, string>,
+  ): Promise<void> {
+    const display = diff.mint === WSOL_MINT
+      ? `${lamportsToSol(diff.delta)} SOL`
+      : `${formatTokenAmount(diff.delta.toString(), await this.decimalsOf(diff.mint))} tokens`;
+    await this.repos.insertDeposit({
+      chatId,
+      mint: diff.mint,
+      amount: diff.delta.toString(),
+    });
+    this.logger.info({ chatId, mint: diff.mint, amount: diff.delta.toString() }, 'deposit confirmed');
+
+    // Best-effort enrichment: latest tx signature + sender + current slot.
+    const meta = await this.findDepositMeta(address);
+    const slot = await this.solana.getSlot().catch(() => null);
+
+    await this.notifier.event('deposit', {
+      wallet: address,
+      sender: meta.sender ?? 'unknown',
+      amount: display,
+      token: diff.mint === WSOL_MINT ? 'SOL' : shortAddress(diff.mint),
+      signature: meta.signature ?? 'n/a',
+      slot: slot !== null ? String(slot) : 'n/a',
+      user: chatId,
+    });
+
+    if (diff.mint === WSOL_MINT) {
+      await this.onUserDeposit?.(
+        chatId,
+        address,
+        Number(diff.delta) / 1e9,
+        Number(curr[WSOL_MINT]) / 1e9,
+      );
+    }
   }
 
   /**

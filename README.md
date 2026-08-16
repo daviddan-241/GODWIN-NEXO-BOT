@@ -13,15 +13,19 @@ or any Node host — no dependency on any external platform.
 
 ## Features
 
-- **Terminal UI** — logo photo + `Hello, {name}!` terminal screen, dashboard
-  (Portfolio · Refresh · Discover To... · Trade · Positions · Sniper ·
-  Copy Trade · Help), wallet-required gates, exact trade-gate minimum
-  (`MINIMUM_SOL`, default `3.0000`)
-- **Wallet layer** — multi-wallet PORTFOLIO MANAGEMENT: generate (BIP39
-  mnemonic), import private key, import seed phrase (12/24 words), status,
-  refresh, withdraw (real on-chain transfers), disconnect. Secrets are
-  AES-256-GCM encrypted at rest; mnemonics are shown once; the DB never sees
-  plaintext and logs never contain secrets.
+- **Terminal UI** — logo photo + `👋 Hello, {name}!` terminal screen
+  (🟢 NEXO TRADING TERMINAL, MARKET FEED, 🔒 TRADE GATE), persistent main
+  keyboard (💼 Portfolio · 🔄 Refresh · 🪙 Discover To… · ⚡ Trade ·
+  📊 Positions · 🤖 Sniper · 🐋 Copy Trade · ❓ Help), wallet-required
+  gates with 🏠 Dashboard, trade-gate minimum (`MIN_SOL_BALANCE`, default
+  `3.0000`) verified against the real RPC balance
+- **Wallet layer** — multi-wallet PORTFOLIO / WALLETS: 🟣 Add SOL Wallet N,
+  🔑 Import to Wallet…, 🧩 Seed → Wallet N, 📈 Check Status, 🔄 Refresh,
+  💸 Withdraw (real on-chain transfers), 🔌 Disconnect (soft, audit-safe),
+  per-wallet active state + last balance check. Wallet secrets are
+  AES-256-GCM encrypted at rest (ENCRYPTION_KEY); mnemonics shown once;
+  the user's seed-phrase message is deleted from the chat after import;
+  the DB never sees plaintext and logs never contain secrets.
 - **Discover Tokens** — real DexScreener search by name/symbol/contract with
   price, market cap, liquidity, 24h volume/change/txns and risk analysis.
 - **Trade** — CONFIRM BUY / CONFIRM SELL with the sniper position size +
@@ -30,11 +34,15 @@ or any Node host — no dependency on any external platform.
 - **AI Sniper** — exact configuration screens (position size, dev hold,
   slippage, priority fee, take profit, stop loss, anti-rug) with
   activate/pause status persisted per user.
-- **Copy Trade** — target wallet configuration + activation (target +
-  status persisted; alerts wired for the monitoring loop).
-- **Deposit monitoring** — polls on-chain balances every 60s, notifies the
-  user (DEPOSIT RECEIVED) and admins (wallet, sender, amount, token, tx
-  signature, timestamp).
+- **Copy Trade** — explicit configuration before following: target wallet,
+  max SOL per trade, max daily exposure, slippage, token filter, Buy+Buy
+  / Buy Only mode, enable/disable (all persisted).
+- **Deposit monitoring** — polls on-chain balances (SOL + SPL) and
+  notifies the user (DEPOSIT RECEIVED) and admins (wallet, sender, amount,
+  token, tx signature, slot, timestamp). Notifications fire only after the
+  delta persists across `DEPOSIT_CONFIRMATION_POLLS` consecutive polls at
+  the configured commitment (anti-reorg), and an optional
+  `SOLANA_WS_URL` WebSocket watcher wakes the monitor on account changes.
 - **Admin event system** — structured events to every admin ID
   (`ADMIN_IDS=123456789,987654321`) with retries, durably stored in
   `admin_events` with trace IDs:
@@ -46,9 +54,14 @@ or any Node host — no dependency on any external platform.
   - `error` (event type, user, safe message, timestamp, trace/reference ID —
     **never secrets**)
   - Plus `/stats` and `/broadcast` admin commands.
-- **Health server** — `/live`, `/health`, `/ready` (DB + RPC + Telegram).
+- **Health server** — UptimeRobot-compatible plain `OK` on `GET /` and
+  `GET /health`; `/live` and `/ready` (full DB + RPC + Telegram checks);
+  `HEALTHCHECK_ENABLED` toggle.
+- **Hardening** — per-chat rate limiting, conversation timeouts (stale
+  flows reset to idle), HTML-escaped user input, RPC retries with backoff,
+  transaction-confirmation handling.
 - **Structured logging** (pino) with secret redaction.
-- **124 automated tests** — unit, real-PostgreSQL, and end-to-end flows over
+- **139 automated tests** — unit, real-PostgreSQL, and end-to-end flows over
   the real Bot-API wire protocol.
 
 ## Commands
@@ -78,9 +91,15 @@ See `.env.example` for the complete annotated list. Key variables:
 |---|---|---|
 | `BOT_TOKEN` | ✅ | Telegram bot token from @BotFather |
 | `ADMIN_IDS` | ✅ | Comma-separated admin chat IDs (`123456789,987654321`); `OWNER_TELEGRAM_ID` is an alias |
-| `WALLET_ENCRYPTION_KEY` | ✅ | `openssl rand -hex 32` — encrypts wallet secrets at rest |
+
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
-| `MINIMUM_SOL` | — | Trade gate minimum (default `3.0000`) |
+| `MIN_SOL_BALANCE` | — | Trade gate minimum (default `3.0000`; `MINIMUM_SOL` alias) |
+| `ENCRYPTION_KEY` | ✅ | Encrypts wallet secrets at rest (`openssl rand -hex 32`; `WALLET_ENCRYPTION_KEY` alias) |
+| `SEED_PHRASE` | — | Optional owner seed: derived at startup, only the public address is logged |
+| `SOLANA_WS_URL` | — | Optional WebSocket endpoint for account-change driven deposit checks |
+| `DEPOSIT_CONFIRMATION_POLLS` | — | Consecutive polls a deposit delta must persist before notify (default 2) |
+| `HEALTHCHECK_ENABLED` | — | `true`/`false` (default true) |
+| `CONVERSATION_TIMEOUT_MS`, `RATE_LIMIT_MAX`, `RATE_LIMIT_WINDOW_MS` | — | Hardening knobs |
 | `SOLANA_NETWORK` / `SOLANA_MAINNET_ENABLED` | — | Mainnet requires **both** |
 | `APP_NAME`, `SUPPORT_USERNAME`, `WEBSITE_URL`, `TWITTER_URL` | — | Branding shown to users |
 | `COINGECKO_API_URL`, `DEXSCREENER_API_URL` | — | Market-data APIs |

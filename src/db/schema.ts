@@ -54,6 +54,9 @@ export const wallets = pgTable('wallets', {
   walletNumber: integer('wallet_number').notNull().default(1),
   /** 'generated' | 'imported' | 'seed_imported' */
   type: text('type').notNull().default('generated'),
+  /** Soft-disconnect flag (wallet rows are kept for audit). */
+  active: boolean('active').notNull().default(true),
+  lastBalanceCheck: timestamp('last_balance_check', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -182,5 +185,10 @@ export const copyTrade = pgTable('copy_trade', {
     .references(() => users.chatId, { onDelete: 'cascade' }),
   targetWallet: text('target_wallet'),
   status: text('status').notNull().default('STANDBY'),
+  mode: text('mode').notNull().default('buy_sell'), // 'buy_sell' | 'buy_only'
+  maxSolPerTrade: doublePrecision('max_sol_per_trade').notNull().default(1),
+  maxDailySol: doublePrecision('max_daily_sol').notNull().default(10),
+  slippage: doublePrecision('slippage').notNull().default(10),
+  tokenFilter: text('token_filter'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });

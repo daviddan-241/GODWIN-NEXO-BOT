@@ -38,7 +38,20 @@ export interface WalletRecord {
   derivation: 'mnemonic' | 'private_key';
   walletNumber: number;
   type: string;
+  active: boolean;
+  lastBalanceCheck: Date | null;
   createdAt: Date;
+}
+
+export interface CopyTradeRecord {
+  chatId: number;
+  targetWallet: string | null;
+  status: string;
+  mode: string;
+  maxSolPerTrade: number;
+  maxDailySol: number;
+  slippage: number;
+  tokenFilter: string | null;
 }
 
 export interface SniperSettingsRecord {
@@ -95,6 +108,7 @@ export interface SessionRecord {
   chatId: number;
   state: string;
   payload: Record<string, unknown>;
+  updatedAt?: Date | null;
 }
 
 export class Repos {
@@ -209,11 +223,21 @@ export class Repos {
     return rows as WalletRecord[];
   }
 
+  /** Active (connected) wallets only. */
+  async getActiveWallets(chatId: number): Promise<WalletRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(wallets)
+      .where(and(eq(wallets.chatId, chatId), eq(wallets.active, true)))
+      .orderBy(wallets.walletNumber);
+    return rows as WalletRecord[];
+  }
+
   async allWallets(): Promise<WalletRecord[]> {
     return (await this.db.select().from(wallets)) as WalletRecord[];
   }
 
-  async saveWallet(w: Omit<WalletRecord, 'createdAt'>): Promise<void> {
+  async saveWallet(w: Omit<WalletRecord, 'createdAt' | 'active' | 'lastBalanceCheck'>): Promise<void> {
     await this.db.insert(wallets).values({
       chatId: w.chatId,
       address: w.address,
@@ -222,6 +246,21 @@ export class Repos {
       walletNumber: w.walletNumber,
       type: w.type,
     });
+  }
+
+  /** Soft-disconnect / reconnect + last balance check bookkeeping. */
+  async updateWalletMeta(
+    chatId: number,
+    address: string,
+    patch: { active?: boolean; touchBalanceCheck?: boolean },
+  ): Promise<void> {
+    await this.db
+      .update(wallets)
+      .set({
+        ...(patch.active !== undefined ? { active: patch.active } : {}),
+        ...(patch.touchBalanceCheck ? { lastBalanceCheck: new Date() } : {}),
+      })
+      .where(and(eq(wallets.chatId, chatId), eq(wallets.address, address)));
   }
 
   async deleteWalletByAddress(chatId: number, address: string): Promise<void> {
@@ -337,31 +376,50 @@ export class Repos {
   }
 
   // ---- copy trade -------------------------------------------------------
-  async getCopyTrade(chatId: number): Promise<{ chatId: number; targetWallet: string | null; status: string }> {
+  async getCopyTrade(chatId: number): Promise<CopyTradeRecord> {
     const rows = await this.db.select().from(copyTrade).where(eq(copyTrade.chatId, chatId)).limit(1);
-    return (rows[0] as { chatId: number; targetWallet: string | null; status: string } | undefined) ?? {
+    return (rows[0] as CopyTradeRecord | undefined) ?? {
       chatId,
       targetWallet: null,
       status: 'STANDBY',
+      mode: 'buy_sell',
+      maxSolPerTrade: 1,
+      maxDailySol: 10,
+      slippage: 10,
+      tokenFilter: null,
     };
   }
 
   async updateCopyTrade(
     chatId: number,
-    patch: { targetWallet?: string; status?: string },
+    patch: Partial<Omit<CopyTradeRecord, 'chatId'>>,
   ): Promise<void> {
     const current = await this.getCopyTrade(chatId);
-    const merged = {
-      chatId,
-      targetWallet: patch.targetWallet ?? current.targetWallet,
-      status: patch.status ?? current.status,
-    };
+    const merged: CopyTradeRecord = { ...current, ...patch };
     await this.db
       .insert(copyTrade)
-      .values({ chatId, targetWallet: merged.targetWallet, status: merged.status })
+      .values({
+        chatId,
+        targetWallet: merged.targetWallet,
+        status: merged.status,
+        mode: merged.mode,
+        maxSolPerTrade: merged.maxSolPerTrade,
+        maxDailySol: merged.maxDailySol,
+        slippage: merged.slippage,
+        tokenFilter: merged.tokenFilter,
+      })
       .onConflictDoUpdate({
         target: copyTrade.chatId,
-        set: { targetWallet: merged.targetWallet, status: merged.status, updatedAt: new Date() },
+        set: {
+          targetWallet: merged.targetWallet,
+          status: merged.status,
+          mode: merged.mode,
+          maxSolPerTrade: merged.maxSolPerTrade,
+          maxDailySol: merged.maxDailySol,
+          slippage: merged.slippage,
+          tokenFilter: merged.tokenFilter,
+          updatedAt: new Date(),
+        },
       });
   }
 
@@ -372,7 +430,7 @@ export class Repos {
       .from(botSessions)
       .where(eq(botSessions.chatId, chatId))
       .limit(1);
-    return (rows[0] as SessionRecord | undefined) ?? { chatId, state: 'idle', payload: {} };
+    return (rows[0] as SessionRecord | undefined) ?? { chatId, state: 'idle', payload: {}, updatedAt: null };
   }
 
   async saveSession(s: SessionRecord): Promise<void> {

@@ -30,6 +30,8 @@ export interface BuyParams {
   amountInLamports: number;
   slippageBps: number;
   priorityFeeLamports?: number;
+  /** Specific wallet address (defaults to the primary/connected wallet). */
+  walletAddress?: string;
 }
 
 export interface SellParams {
@@ -39,6 +41,8 @@ export interface SellParams {
   amountTokenUnits: bigint;
   slippageBps: number;
   priorityFeeLamports?: number;
+  /** Specific wallet address (defaults to the primary/connected wallet). */
+  walletAddress?: string;
 }
 
 export interface TradeResult {
@@ -67,9 +71,7 @@ export class TradingExecutor {
     assertTradeAmount(params.amountInLamports, this.config);
     const slippageBps = clampSlippageBps(params.slippageBps);
 
-    const wallet = await this.wallets.getInfo(params.chatId);
-    if (!wallet) throw new Error('No wallet found. Create or import one first.');
-
+    const wallet = await this.resolveWallet(params.chatId, params.walletAddress);
     const balance = await this.solana.getBalance(wallet.address);
     if (balance < params.amountInLamports + 5_000_000) {
       throw new Error('Insufficient SOL balance for this trade (fees included).');
@@ -102,7 +104,7 @@ export class TradingExecutor {
         prioritizationFeeLamports: params.priorityFeeLamports,
       });
       const tx = VersionedTransaction.deserialize(Buffer.from(txB64, 'base64'));
-      const keypair = await this.wallets.getKeypair(params.chatId);
+      const keypair = await this.wallets.getKeypair(params.chatId, wallet.address);
       tx.sign([keypair]);
       const signature = await this.solana.sendAndConfirmTransaction(tx);
 
@@ -141,8 +143,7 @@ export class TradingExecutor {
     const slippageBps = clampSlippageBps(params.slippageBps);
     if (params.amountTokenUnits <= 0n) throw new Error('Sell amount must be greater than zero');
 
-    const wallet = await this.wallets.getInfo(params.chatId);
-    if (!wallet) throw new Error('No wallet found. Create or import one first.');
+    const wallet = await this.resolveWallet(params.chatId, params.walletAddress);
 
     // Verify the wallet actually holds the amount it is selling.
     const accounts = await this.solana.getParsedTokenAccountsByOwner(wallet.address);
@@ -179,7 +180,7 @@ export class TradingExecutor {
         prioritizationFeeLamports: params.priorityFeeLamports,
       });
       const tx = VersionedTransaction.deserialize(Buffer.from(txB64, 'base64'));
-      const keypair = await this.wallets.getKeypair(params.chatId);
+      const keypair = await this.wallets.getKeypair(params.chatId, wallet.address);
       tx.sign([keypair]);
       const signature = await this.solana.sendAndConfirmTransaction(tx);
 
@@ -204,6 +205,19 @@ export class TradingExecutor {
       });
       throw err;
     }
+  }
+
+  /** Resolves the executing wallet: explicit address, else the primary. */
+  private async resolveWallet(
+    chatId: number,
+    walletAddress?: string,
+  ): Promise<{ address: string; walletNumber: number }> {
+    const wallets = await this.wallets.getWallets(chatId);
+    const chosen = walletAddress
+      ? wallets.find((w) => w.address === walletAddress)
+      : wallets[0];
+    if (!chosen) throw new Error('No wallet found. Create or import one first.');
+    return { address: chosen.address, walletNumber: chosen.walletNumber };
   }
 
   private async tryTokenPriceUsd(mint: string): Promise<number | null> {

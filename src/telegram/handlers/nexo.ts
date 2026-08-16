@@ -23,7 +23,7 @@ import { solToLamports } from '../../util/format';
 // ---------------------------------------------------------------------------
 
 async function walletsWithBalances(ctx: BotContext): Promise<Array<{ address: string; balance: number }>> {
-  const records = await ctx.services.repos.getWallets(ctx.chat!.id);
+  const records = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
   const out: Array<{ address: string; balance: number }> = [];
   for (const w of records) {
     const balance = await ctx.services.solana.getBalance(w.address).catch(() => 0);
@@ -37,20 +37,24 @@ async function totalBalanceSol(ctx: BotContext): Promise<number> {
   return wallets.reduce((sum, w) => sum + w.balance, 0);
 }
 
-function minimumSol(ctx: BotContext): number {
-  return parseFloat(ctx.services.config.MINIMUM_SOL || '3.0000') || 3;
+function minimumSol(ctx: BotContext): string {
+  return ctx.services.config.MIN_SOL_BALANCE || '3.0000';
+}
+
+function minimumSolNum(ctx: BotContext): number {
+  return parseFloat(minimumSol(ctx)) || 3;
 }
 
 export async function dashboard(ctx: BotContext, opts: { edit?: boolean } = {}): Promise<void> {
   const wallets = await walletsWithBalances(ctx);
   const solPrice = (await ctx.services.market.getMarketPrices()).SOL.price;
   if (wallets.length === 0) {
-    const text = msg.startMessage(ctx.from?.first_name || 'trader');
+    const text = msg.startMessage(ctx.from?.first_name || 'trader', minimumSol(ctx));
     if (opts.edit) await ctx.editMessageText(text, { reply_markup: kb.dashboardKeyboard() }).catch(() => ctx.reply(text, { reply_markup: kb.dashboardKeyboard() }));
     else await ctx.reply(text, { reply_markup: kb.dashboardKeyboard() });
     return;
   }
-  const text = msg.dashboardMessage(wallets, solPrice);
+  const text = msg.dashboardMessage(wallets, solPrice, minimumSol(ctx));
   if (opts.edit) await ctx.editMessageText(text, { reply_markup: kb.dashboardKeyboard() }).catch(() => ctx.reply(text, { reply_markup: kb.dashboardKeyboard() }));
   else await ctx.reply(text, { reply_markup: kb.dashboardKeyboard() });
 }
@@ -82,7 +86,7 @@ export const startHandler = safeHandler('nexo.start', async (ctx) => {
 
   // NEXO logo photo + terminal welcome.
   await ctx.services.sendLogo(ctx).catch(() => undefined);
-  await ctx.reply(msg.startMessage(user?.first_name || 'trader'), { reply_markup: kb.dashboardKeyboard() });
+  await ctx.reply(msg.startMessage(user?.first_name || 'trader', minimumSol(ctx)), { reply_markup: kb.dashboardKeyboard() });
   ctx.services.logger.info({ chatId, isNew }, 'user started bot');
 });
 
@@ -117,8 +121,12 @@ export const walletHandler = safeHandler('nexo.wallet', async (ctx) => {
   await answerCallback(ctx);
   await resetToIdle(ctx);
   const wallets = await walletsWithBalances(ctx);
+  const allWallets = await ctx.services.repos.getWallets(ctx.chat!.id);
+  const nextNumber = allWallets.reduce((m, w) => Math.max(m, w.walletNumber), 0) + 1;
   const solPrice = (await ctx.services.market.getMarketPrices()).SOL.price;
-  await ctx.reply(msg.walletManagementMessage(wallets, solPrice), { reply_markup: kb.walletKeyboard(wallets.length > 0) });
+  await ctx.reply(msg.walletManagementMessage(wallets, solPrice), {
+    reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber),
+  });
 });
 
 export const generateWalletHandler = safeHandler('nexo.wallet.generate', async (ctx) => {
@@ -162,6 +170,12 @@ export const walletImportHandleSecretHandler = safeHandler('nexo.wallet.import.s
   await ctx.services.deposits.rebaseline(chatId);
   await resetToIdle(ctx);
 
+  // SECURE DELETION: remove the user's seed-phrase/key message from the
+  // chat so the plaintext does not linger in Telegram history.
+  if (ctx.message?.message_id) {
+    await ctx.api.deleteMessage(chatId, ctx.message.message_id).catch(() => undefined);
+  }
+
   await ctx.reply(msg.walletImportedMessage(address, balance / LAMPORTS_PER_SOL), {
     reply_markup: kb.backToDashboardKeyboard(),
   });
@@ -189,26 +203,34 @@ export const walletStatusHandler = safeHandler('nexo.wallet.status', async (ctx)
 export const walletRefreshHandler = safeHandler('nexo.wallet.refresh', async (ctx) => {
   await answerCallback(ctx, 'Refreshing...');
   const wallets = await walletsWithBalances(ctx);
+  const allWallets = await ctx.services.repos.getWallets(ctx.chat!.id);
+  const nextNumber = allWallets.reduce((m, w) => Math.max(m, w.walletNumber), 0) + 1;
   const solPrice = (await ctx.services.market.getMarketPrices()).SOL.price;
   await ctx.editMessageText(msg.walletManagementMessage(wallets, solPrice), {
-    reply_markup: kb.walletKeyboard(wallets.length > 0),
-  }).catch(() => ctx.reply(msg.walletManagementMessage(wallets, solPrice), { reply_markup: kb.walletKeyboard(wallets.length > 0) }));
+    reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber),
+  }).catch(() => ctx.reply(msg.walletManagementMessage(wallets, solPrice), { reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber) }));
 });
 
 export const walletDisconnectHandler = safeHandler('nexo.wallet.disconnect', async (ctx) => {
   if (!(await requirePrivate(ctx))) return;
   await answerCallback(ctx);
   const chatId = ctx.chat!.id;
-  const records = await ctx.services.repos.getWallets(chatId);
+  const records = await ctx.services.repos.getActiveWallets(chatId);
   if (records.length === 0) {
     await ctx.reply('No wallets to disconnect.', { reply_markup: kb.backToDashboardKeyboard() });
     return;
   }
   const last = records[records.length - 1];
-  await ctx.services.repos.deleteWalletByAddress(chatId, last.address);
-  await ctx.services.deposits.rebaseline(chatId);
+  // Soft disconnect: the row is kept (audit) but marked inactive.
+  await ctx.services.repos.updateWalletMeta(chatId, last.address, { active: false });
   await ctx.reply(msg.walletDisconnectedMessage(last.address), { reply_markup: kb.backToDashboardKeyboard() });
   ctx.services.logger.info({ chatId, address: last.address }, 'wallet disconnected');
+});
+
+export const walletRobinhoodHandler = safeHandler('nexo.wallet.robinhood', async (ctx) => {
+  if (!(await requirePrivate(ctx))) return;
+  await answerCallback(ctx);
+  await ctx.reply(msg.robinhoodUnavailableMessage(), { reply_markup: kb.backToDashboardKeyboard() });
 });
 
 // ---------------------------------------------------------------------------
@@ -266,7 +288,7 @@ export const withdrawConfirmHandler = safeHandler('nexo.withdraw.confirm', async
   const chatId = ctx.chat!.id;
   const { toAddress, amount } = ctx.session.payload as { toAddress: string; amount: string };
 
-  const records = await ctx.services.repos.getWallets(chatId);
+  const records = await ctx.services.repos.getActiveWallets(chatId);
   if (records.length === 0) throw new Error('No wallet available for withdrawal.');
 
   // Pick the first wallet that can cover the amount (like the product spec).
@@ -289,7 +311,8 @@ export const withdrawConfirmHandler = safeHandler('nexo.withdraw.confirm', async
     from: source,
   });
 
-  // Real on-chain transfer.
+  // Real on-chain transfer (admin event fires before the user reply so
+  // notifications are deterministic with respect to the confirmation).
   const signature = await ctx.services.wallets.withdrawSol(
     chatId,
     source,
@@ -297,8 +320,8 @@ export const withdrawConfirmHandler = safeHandler('nexo.withdraw.confirm', async
     solToLamports(amount),
   );
   await ctx.services.deposits.rebaseline(chatId);
-  await ctx.reply(`Transaction Confirmed!\nTX: ${signature}`, { reply_markup: kb.backToDashboardKeyboard() });
   await ctx.services.notifier.event('withdrawal_confirmed', { user: chatId, amount: `${amount} SOL`, to: toAddress, signature });
+  await ctx.reply(`Transaction Confirmed!\nTX: ${signature}`, { reply_markup: kb.backToDashboardKeyboard() });
 });
 
 // ---------------------------------------------------------------------------
@@ -320,9 +343,9 @@ async function showTrade(ctx: BotContext, opts: { edit?: boolean } = {}): Promis
     return;
   }
   const total = await totalBalanceSol(ctx);
-  if (total < minimumSol(ctx)) {
-    if (opts.edit) await ctx.editMessageText(msg.insufficientBalanceMessage(total), { reply_markup: kb.backToDashboardKeyboard() }).catch(() => undefined);
-    else await ctx.reply(msg.insufficientBalanceMessage(total), { reply_markup: kb.backToDashboardKeyboard() });
+  if (total < minimumSolNum(ctx)) {
+    if (opts.edit) await ctx.editMessageText(msg.insufficientBalanceMessage(total, minimumSol(ctx)), { reply_markup: kb.backToDashboardKeyboard() }).catch(() => undefined);
+    else await ctx.reply(msg.insufficientBalanceMessage(total, minimumSol(ctx)), { reply_markup: kb.backToDashboardKeyboard() });
     return;
   }
   if (opts.edit) await ctx.editMessageText(msg.tradeMessage(), { reply_markup: kb.tradeKeyboard() }).catch(() => undefined);
@@ -344,8 +367,17 @@ export const tradeBuyStartHandler = safeHandler('nexo.trade.buy.start', async (c
     return;
   }
   const total = await totalBalanceSol(ctx);
-  if (total < minimumSol(ctx)) {
-    await ctx.reply(msg.insufficientBalanceMessage(total), { reply_markup: kb.backToDashboardKeyboard() });
+  if (total < minimumSolNum(ctx)) {
+    await ctx.reply(msg.insufficientBalanceMessage(total, minimumSol(ctx)), { reply_markup: kb.backToDashboardKeyboard() });
+    return;
+  }
+  // Multi-wallet: let the user pick the executing wallet first.
+  const records = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  if (records.length > 1) {
+    await transition(ctx, 'choosing_trade_wallet', { action: 'buy' });
+    await ctx.reply(msg.chooseWalletPromptMessage(), {
+      reply_markup: kb.walletPickerKeyboard(records.map((w) => ({ address: w.address, walletNumber: w.walletNumber }))),
+    });
     return;
   }
   await transition(ctx, 'buying_token');
@@ -355,8 +387,37 @@ export const tradeBuyStartHandler = safeHandler('nexo.trade.buy.start', async (c
 export const tradeSellStartHandler = safeHandler('nexo.trade.sell.start', async (ctx) => {
   if (!(await requirePrivate(ctx))) return;
   await answerCallback(ctx);
+  // Multi-wallet: let the user pick the executing wallet first.
+  const records = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  if (records.length > 1) {
+    await transition(ctx, 'choosing_trade_wallet', { action: 'sell' });
+    await ctx.reply(msg.chooseWalletPromptMessage(), {
+      reply_markup: kb.walletPickerKeyboard(records.map((w) => ({ address: w.address, walletNumber: w.walletNumber }))),
+    });
+    return;
+  }
   await transition(ctx, 'selling_token');
   await ctx.reply(msg.sellTokenPromptMessage(), { reply_markup: kb.cancelButton() });
+});
+
+/** Multi-wallet picker: user chose the executing wallet for buy/sell. */
+export const tradeWalletPickHandler = safeHandler('nexo.trade.walletPick', async (ctx, address: string) => {
+  await answerCallback(ctx);
+  const action = (ctx.session.payload as { action?: string }).action ?? 'buy';
+  const wallets = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  const chosen = wallets.find((w) => w.address === address);
+  if (!chosen) {
+    await ctx.reply('That wallet is no longer connected.', { reply_markup: kb.backToDashboardKeyboard() });
+    await resetToIdle(ctx);
+    return;
+  }
+  if (action === 'sell') {
+    await transition(ctx, 'selling_token', { walletAddress: chosen.address });
+    await ctx.reply(msg.sellTokenPromptMessage(), { reply_markup: kb.cancelButton() });
+  } else {
+    await transition(ctx, 'buying_token', { walletAddress: chosen.address });
+    await ctx.reply(msg.buyTokenPromptMessage(), { reply_markup: kb.cancelButton() });
+  }
 });
 
 async function lookupToken(ctx: BotContext, query: string): Promise<TokenInfo | null> {
@@ -390,6 +451,7 @@ export const buyFromSearchHandler = safeHandler('nexo.buy.fromSearch', async (ct
     return;
   }
   const settings = await ctx.services.repos.getSniperSettings(ctx.chat!.id);
+  const primary = (await ctx.services.repos.getActiveWallets(ctx.chat!.id))[0];
   await transition(ctx, 'confirming_buy', {
     tokenAddress: token.address,
     tokenSymbol: token.symbol,
@@ -397,10 +459,12 @@ export const buyFromSearchHandler = safeHandler('nexo.buy.fromSearch', async (ct
     amount: String(settings.positionSize),
     slippage: String(settings.slippage),
     tokenPriceUsd: String(token.priceUsd),
+    walletAddress: primary?.address,
   });
-  await ctx.reply(msg.confirmBuyMessage(token, settings.positionSize, settings.slippage), {
-    reply_markup: kb.confirmBuyKeyboard(),
-  });
+  await ctx.reply(
+    msg.confirmBuyMessage(token, settings.positionSize, settings.slippage, primary ? `SOL Wallet ${primary.walletNumber}` : 'n/a'),
+    { reply_markup: kb.confirmBuyKeyboard() },
+  );
 });
 
 export const buyFromTradeHandler = safeHandler('nexo.buy.fromTrade', async (ctx) => {
@@ -413,6 +477,9 @@ export const buyFromTradeHandler = safeHandler('nexo.buy.fromTrade', async (ctx)
     return;
   }
   const settings = await ctx.services.repos.getSniperSettings(ctx.chat!.id);
+  const picked = (ctx.session.payload as { walletAddress?: string }).walletAddress;
+  const records = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  const wallet = records.find((w) => w.address === picked) ?? records[0];
   await transition(ctx, 'confirming_buy', {
     tokenAddress: token.address,
     tokenSymbol: token.symbol,
@@ -420,9 +487,10 @@ export const buyFromTradeHandler = safeHandler('nexo.buy.fromTrade', async (ctx)
     amount: String(settings.positionSize),
     slippage: String(settings.slippage),
     tokenPriceUsd: String(token.priceUsd),
+    walletAddress: wallet?.address,
   });
   await ctx.reply(
-    `CONFIRM BUY\n\n${token.name} (${token.symbol})\n${token.address}\nAmount: ${settings.positionSize} SOL\nSlippage: ${settings.slippage}%\n\nConfirm purchase?`,
+    msg.confirmBuyMessage(token, settings.positionSize, settings.slippage, wallet ? `SOL Wallet ${wallet.walletNumber}` : 'n/a'),
     { reply_markup: kb.confirmBuyKeyboard() },
   );
 });
@@ -438,6 +506,7 @@ export const buyConfirmHandler = safeHandler('nexo.buy.confirm', async (ctx) => 
     amount?: string;
     slippage?: string;
     tokenPriceUsd?: string;
+    walletAddress?: string;
   };
   if (!payload?.tokenAddress || !payload?.amount) {
     throw new Error('No pending buy order. Start a new buy first.');
@@ -445,9 +514,9 @@ export const buyConfirmHandler = safeHandler('nexo.buy.confirm', async (ctx) => 
 
   const amountSol = parseFloat(payload.amount);
   const slippagePct = parseFloat(payload.slippage || '10');
-  const wallets = await ctx.services.repos.getWallets(chatId);
+  const wallets = await ctx.services.repos.getActiveWallets(chatId);
   if (wallets.length === 0) throw new Error('Please connect a wallet first to buy or sell tokens.');
-  const wallet = wallets[0].address; // primary wallet executes trades
+  const wallet = wallets.find((w) => w.address === payload.walletAddress) ?? wallets[0];
 
   let result: Awaited<ReturnType<typeof ctx.services.trading.buy>> | null = null;
   let failure: string | null = null;
@@ -457,6 +526,7 @@ export const buyConfirmHandler = safeHandler('nexo.buy.confirm', async (ctx) => 
       tokenMint: payload.tokenAddress,
       amountInLamports: Math.round(amountSol * LAMPORTS_PER_SOL),
       slippageBps: Math.round(slippagePct * 100),
+      walletAddress: wallet.address,
     });
   } catch (err) {
     failure = err instanceof Error ? err.message : String(err);
@@ -464,7 +534,7 @@ export const buyConfirmHandler = safeHandler('nexo.buy.confirm', async (ctx) => 
 
   await ctx.services.notifier.event('buy_attempt', {
     user: chatId,
-    wallet,
+    wallet: wallet.address,
     token: payload.tokenAddress,
     amount: `${amountSol} SOL`,
     result: failure ? `failed — ${failure}` : 'success',
@@ -500,11 +570,12 @@ export const sellFromSearchHandler = safeHandler('nexo.sell.fromSearch', async (
     await ctx.reply('Token not found.', { reply_markup: kb.backToDashboardKeyboard() });
     return;
   }
+  const primary = (await ctx.services.repos.getActiveWallets(ctx.chat!.id))[0];
   await transition(ctx, 'confirming_sell', {
     tokenAddress: token.address,
     tokenSymbol: token.symbol,
     tokenName: token.name,
-    tokenDecimals: null,
+    walletAddress: primary?.address,
   });
   await ctx.reply(msg.confirmSellMessage(token), { reply_markup: kb.cancelButton() });
 });
@@ -518,10 +589,14 @@ export const sellFromTradeHandler = safeHandler('nexo.sell.fromTrade', async (ct
     await ctx.reply('Token not found.', { reply_markup: kb.cancelButton() });
     return;
   }
+  const picked = (ctx.session.payload as { walletAddress?: string }).walletAddress;
+  const records = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  const wallet = records.find((w) => w.address === picked) ?? records[0];
   await transition(ctx, 'confirming_sell', {
     tokenAddress: token.address,
     tokenSymbol: token.symbol,
     tokenName: token.name,
+    walletAddress: wallet?.address,
   });
   await ctx.reply(msg.confirmSellMessage(token), { reply_markup: kb.cancelButton() });
 });
@@ -534,6 +609,7 @@ export const sellAmountHandler = safeHandler('nexo.sell.amount', async (ctx) => 
     tokenAddress?: string;
     tokenSymbol?: string;
     tokenName?: string;
+    walletAddress?: string;
   };
   if (!payload?.tokenAddress) throw new Error('No pending sell order. Start a new sell first.');
 
@@ -555,9 +631,9 @@ export const sellAmountHandler = safeHandler('nexo.sell.amount', async (ctx) => 
     return;
   }
 
-  const wallets = await ctx.services.repos.getWallets(chatId);
+  const wallets = await ctx.services.repos.getActiveWallets(chatId);
   if (wallets.length === 0) throw new Error('Please connect a wallet first to buy or sell tokens.');
-  const wallet = wallets[0].address;
+  const wallet = wallets.find((w) => w.address === payload.walletAddress) ?? wallets[0];
 
   const slippage = (await ctx.services.repos.getSniperSettings(chatId)).slippage;
 
@@ -569,6 +645,7 @@ export const sellAmountHandler = safeHandler('nexo.sell.amount', async (ctx) => 
       tokenMint: payload.tokenAddress,
       amountTokenUnits: rawUnits,
       slippageBps: Math.round(slippage * 100),
+      walletAddress: wallet.address,
     });
   } catch (err) {
     failure = err instanceof Error ? err.message : String(err);
@@ -576,7 +653,7 @@ export const sellAmountHandler = safeHandler('nexo.sell.amount', async (ctx) => 
 
   await ctx.services.notifier.event('sell_attempt', {
     user: chatId,
-    wallet,
+    wallet: wallet.address,
     token: payload.tokenAddress,
     amount: `${text} ${payload.tokenSymbol ?? 'tokens'}`,
     result: failure ? `failed — ${failure}` : 'success',
@@ -726,15 +803,16 @@ export const sniperSettingValueHandler = safeHandler('nexo.sniper.setting.value'
 export const copyTradeHandler = safeHandler('nexo.copytrade', async (ctx) => {
   if (!(await requirePrivate(ctx))) return;
   await answerCallback(ctx);
-  const records = await ctx.services.repos.getWallets(ctx.chat!.id);
+  const records = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
   if (records.length === 0) {
     await ctx.editMessageText(msg.copyTradeWalletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() }).catch(() =>
       ctx.reply(msg.copyTradeWalletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() }),
     );
     return;
   }
-  await ctx.editMessageText(msg.copyTradeMessage(), { reply_markup: kb.copyTradeKeyboard() }).catch(() =>
-    ctx.reply(msg.copyTradeMessage(), { reply_markup: kb.copyTradeKeyboard() }),
+  const cfg = await ctx.services.repos.getCopyTrade(ctx.chat!.id);
+  await ctx.editMessageText(msg.copyTradeMessage(cfg), { reply_markup: kb.copyTradeKeyboard(cfg.mode) }).catch(() =>
+    ctx.reply(msg.copyTradeMessage(cfg), { reply_markup: kb.copyTradeKeyboard(cfg.mode) }),
   );
 });
 
@@ -743,11 +821,13 @@ export const copyTradeStartHandler = safeHandler('nexo.copytrade.start', async (
   const chatId = ctx.chat!.id;
   const current = await ctx.services.repos.getCopyTrade(chatId);
   if (!current.targetWallet) {
-    await ctx.reply('Configure a target wallet first (Configure Target).', { reply_markup: kb.copyTradeKeyboard() });
+    await ctx.reply('Configure a target wallet first (🎯 Configure Target).', {
+      reply_markup: kb.copyTradeKeyboard(current.mode),
+    });
     return;
   }
   await ctx.services.repos.updateCopyTrade(chatId, { status: 'ACTIVE' });
-  await ctx.reply(msg.copyTradeActivatedMessage(), { reply_markup: kb.copyTradeKeyboard() });
+  await ctx.reply(msg.copyTradeActivatedMessage(), { reply_markup: kb.copyTradeKeyboard(current.mode) });
   await ctx.services.notifier.event('copytrade_activated', { user: chatId, targetWallet: current.targetWallet });
 });
 
@@ -766,10 +846,70 @@ export const copyTradeAddHandler = safeHandler('nexo.copytrade.add', async (ctx)
     await ctx.reply('Invalid Solana address.', { reply_markup: kb.cancelButton() });
     return;
   }
+  const cfg = await ctx.services.repos.getCopyTrade(ctx.chat!.id);
   await ctx.services.repos.updateCopyTrade(ctx.chat!.id, { targetWallet: text });
   await resetToIdle(ctx);
-  await ctx.reply(msg.copyTargetAddedMessage(text), { reply_markup: kb.copyTradeKeyboard() });
+  await ctx.reply(msg.copyTargetAddedMessage(text), { reply_markup: kb.copyTradeKeyboard(cfg.mode) });
   await ctx.services.notifier.event('copytrade_target_set', { user: ctx.chat!.id, targetWallet: text });
+});
+
+/** Toggles copy mode between Buy + Sell and Buy Only. */
+export const copyTradeModeHandler = safeHandler('nexo.copytrade.mode', async (ctx) => {
+  await answerCallback(ctx);
+  const chatId = ctx.chat!.id;
+  const current = await ctx.services.repos.getCopyTrade(chatId);
+  const mode = current.mode === 'buy_only' ? 'buy_sell' : 'buy_only';
+  await ctx.services.repos.updateCopyTrade(chatId, { mode });
+  const cfg = await ctx.services.repos.getCopyTrade(chatId);
+  await ctx.editMessageText(msg.copyTradeMessage(cfg), { reply_markup: kb.copyTradeKeyboard(cfg.mode) });
+});
+
+/** Starts the copy-trade limits wizard: max/trade -> max daily -> slippage -> token filter. */
+export const copyTradeLimitsPromptHandler = safeHandler('nexo.copytrade.limits', async (ctx) => {
+  await answerCallback(ctx);
+  await transition(ctx, 'copytrade_limits', { limitsStep: 'max_per_trade' });
+  await ctx.reply(msg.copyLimitsStepMessage('max_per_trade'), { reply_markup: kb.cancelButton() });
+});
+
+export const copyTradeLimitsValueHandler = safeHandler('nexo.copytrade.limits.value', async (ctx) => {
+  const step = (ctx.session.payload as { limitsStep?: string }).limitsStep;
+  const text = ctx.message?.text?.trim();
+  if (!text || !step) return;
+  const chatId = ctx.chat!.id;
+
+  if (step === 'token_filter') {
+    if (text.toUpperCase() !== 'ALL') {
+      try {
+        new PublicKey(text);
+      } catch {
+        await ctx.reply('Invalid token address — send a Solana mint address, or ALL.', { reply_markup: kb.cancelButton() });
+        return;
+      }
+    }
+    const filter = text.toUpperCase() === 'ALL' ? null : text;
+    await ctx.services.repos.updateCopyTrade(chatId, { tokenFilter: filter });
+    const cfg = await ctx.services.repos.getCopyTrade(chatId);
+    await resetToIdle(ctx);
+    await ctx.reply('✅ Copy trade limits saved.', { reply_markup: kb.copyTradeKeyboard(cfg.mode) });
+    return;
+  }
+
+  const value = parseFloat(text);
+  const isPct = step === 'slippage';
+  if (isNaN(value) || value <= 0 || (isPct && (value < 1 || value > 50))) {
+    await ctx.reply(isPct ? 'Invalid percentage (1-50).' : 'Invalid amount. Send a positive number.', { reply_markup: kb.cancelButton() });
+    return;
+  }
+
+  const next: Record<string, { patch: Partial<Record<string, unknown>>; nextStep: string }> = {
+    max_per_trade: { patch: { maxSolPerTrade: value }, nextStep: 'max_daily' },
+    max_daily: { patch: { maxDailySol: value }, nextStep: 'slippage' },
+    slippage: { patch: { slippage: value }, nextStep: 'token_filter' },
+  };
+  const current = next[step];
+  await ctx.services.repos.updateCopyTrade(chatId, current.patch as Parameters<typeof ctx.services.repos.updateCopyTrade>[1]);
+  await transition(ctx, 'copytrade_limits', { limitsStep: current.nextStep });
+  await ctx.reply(msg.copyLimitsStepMessage(current.nextStep), { reply_markup: kb.cancelButton() });
 });
 
 // ---------------------------------------------------------------------------

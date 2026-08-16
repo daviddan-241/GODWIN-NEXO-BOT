@@ -13,6 +13,8 @@ import { ConnectionSolanaClient } from './solana/client';
 import { JupiterPriceProvider, JupiterSwapProvider } from './market/jupiter';
 import { CoinGeckoMarket } from './market/coingecko';
 import { DexScreenerTokenSearch } from './market/dexscreener';
+import { SolanaAccountWatcher } from './solana/ws-watcher';
+import { keypairFromMnemonic } from './wallet/derive';
 import { WalletService } from './wallet/service';
 import { TradingExecutor } from './trading/executor';
 import { PortfolioService } from './portfolio/service';
@@ -111,6 +113,9 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   // endpoint reports the cached result instead of re-calling the Bot API on
   // every poll.
   let botVerified = false;
+  // Optional WebSocket watcher lifecycle (owned by the app).
+  let watcher: SolanaAccountWatcher | null = null;
+  let watcherTimer: NodeJS.Timeout | null = null;
 
   const health = createHealthServer(
     {
@@ -169,10 +174,49 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
         ])
         .catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'setMyCommands failed (non-fatal)'));
 
-      // 3. Health server.
-      health.listen(config.PORT, '0.0.0.0', () => {
-        logger.info({ port: config.PORT }, 'health server listening on 0.0.0.0');
-      });
+      // 3. Health server (UptimeRobot: GET / or /health -> "OK").
+      if (config.HEALTHCHECK_ENABLED) {
+        health.listen(config.PORT, '0.0.0.0', () => {
+          logger.info({ port: config.PORT }, 'health server listening on 0.0.0.0');
+        });
+      } else {
+        logger.info('health server disabled (HEALTHCHECK_ENABLED=false)');
+      }
+
+      // 4. Optional owner seed phrase: derive + report the PUBLIC address
+      //    only. The seed itself is never logged or stored.
+      if (config.SEED_PHRASE) {
+        try {
+          const owner = keypairFromMnemonic(config.SEED_PHRASE);
+          logger.info({ ownerAddress: owner.publicKey.toBase58() }, 'owner seed phrase configured');
+        } catch (err) {
+          throw new Error(`SEED_PHRASE is not a valid BIP39 mnemonic: ${err instanceof Error ? err.message : err}`);
+        }
+      }
+
+      // 5. Optional WebSocket account watcher: wakes the deposit monitor on
+      //    account changes. Polling remains authoritative either way.
+      if (config.SOLANA_WS_URL) {
+        watcher = new SolanaAccountWatcher(
+          config.rpcUrl,
+          config.SOLANA_WS_URL,
+          config.COMMITMENT,
+          logger,
+          () => void deposits.pollOnce(),
+        );
+        watcher.start();
+        const reconcile = async () => {
+          try {
+            const wallets = await repos.allWallets();
+            await watcher?.setAddresses(wallets.filter((w) => w.active !== false).map((w) => w.address));
+          } catch {
+            // reconcile failure is non-fatal
+          }
+        };
+        void reconcile();
+        watcherTimer = setInterval(() => void reconcile(), 30_000);
+        watcherTimer.unref?.();
+      }
 
       // 4. Deposit monitor.
       deposits.start();
@@ -190,6 +234,8 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
         });
     },
     async stop() {
+      if (watcherTimer) clearInterval(watcherTimer);
+      watcher?.stop();
       deposits.stop();
       try {
         await bot.stop();

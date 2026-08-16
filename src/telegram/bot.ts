@@ -17,6 +17,7 @@ import type { PortfolioService } from '../portfolio/service';
 import type { DepositMonitor } from '../deposits/monitor';
 import type { AdminNotifier } from '../admin/notifier';
 import type { SessionData, SessionStore } from './session';
+import { RateLimiter } from './rate-limit';
 import { dashboard } from './handlers/nexo';
 import {
   startHandler,
@@ -32,6 +33,8 @@ import {
   walletStatusHandler,
   walletRefreshHandler,
   walletDisconnectHandler,
+  walletRobinhoodHandler,
+  tradeWalletPickHandler,
   withdrawStartHandler,
   withdrawAddressHandler,
   withdrawAmountHandler,
@@ -58,6 +61,9 @@ import {
   copyTradeStartHandler,
   copyTradeConfigurePromptHandler,
   copyTradeAddHandler,
+  copyTradeModeHandler,
+  copyTradeLimitsPromptHandler,
+  copyTradeLimitsValueHandler,
   statsHandler,
   broadcastHandler,
 } from './handlers/nexo';
@@ -95,17 +101,37 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   );
 
   // ------------------------------------------------------------------
-  // Session middleware: load DB-backed conversation state per update
-  // and persist it after handling.
+  // Hardening middleware: per-chat rate limiting + DB-backed session
+  // load with conversation timeouts, then persist after handling.
   // ------------------------------------------------------------------
+  const rateLimiter = new RateLimiter(
+    services.config.RATE_LIMIT_MAX,
+    services.config.RATE_LIMIT_WINDOW_MS,
+  );
+  const ratePruner = setInterval(() => rateLimiter.prune(), 60_000);
+  ratePruner.unref?.();
+
   bot.use(async (ctx, next) => {
-    const chatId = ctx.chat?.id;
-    ctx.services = services;
+    const chatId = ctx.chat?.id ?? ctx.update?.message?.chat?.id;
+    if (chatId !== undefined && !rateLimiter.allow(chatId)) {
+      services.logger.warn({ chatId }, 'update dropped by rate limiter');
+      return; // drop abusive floods before any handler runs
+    }
     if (chatId === undefined) {
+      ctx.services = services;
       await next();
       return;
     }
+    ctx.services = services;
     ctx.session = await services.sessions.get(chatId);
+
+    // Conversation timeout: stale flows reset to idle.
+    const age = Date.now() - new Date(ctx.session.updatedAt).getTime();
+    if (ctx.session.state !== IDLE_STATE && age > services.config.CONVERSATION_TIMEOUT_MS) {
+      ctx.session.state = IDLE_STATE;
+      ctx.session.payload = {};
+    }
+
     try {
       await next();
     } finally {
@@ -157,6 +183,7 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   bot.callbackQuery('wallet_refresh', (ctx) => walletRefreshHandler(ctx));
   bot.callbackQuery('wallet_withdraw', (ctx) => withdrawStartHandler(ctx));
   bot.callbackQuery('wallet_disconnect', (ctx) => walletDisconnectHandler(ctx));
+  bot.callbackQuery('wallet_robinhood', (ctx) => walletRobinhoodHandler(ctx));
   bot.callbackQuery('discover', (ctx) => discoverHandler(ctx));
   bot.callbackQuery('trade', (ctx) => tradeHandler(ctx));
   bot.callbackQuery('buy_sol', (ctx) => tradeBuyStartHandler(ctx));
@@ -175,6 +202,9 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   bot.callbackQuery('copytrade', (ctx) => copyTradeHandler(ctx));
   bot.callbackQuery('copytrade_start', (ctx) => copyTradeStartHandler(ctx));
   bot.callbackQuery('copytrade_add', (ctx) => copyTradeConfigurePromptHandler(ctx));
+  bot.callbackQuery('copytrade_mode', (ctx) => copyTradeModeHandler(ctx));
+  bot.callbackQuery('copytrade_limits', (ctx) => copyTradeLimitsPromptHandler(ctx));
+  bot.callbackQuery(/^tw_(.+)$/, (ctx) => tradeWalletPickHandler(ctx, ctx.match[1]));
   bot.callbackQuery('help', (ctx) => helpHandler(ctx));
   bot.callbackQuery('cancel', (ctx) => cancelHandler(ctx));
   bot.callbackQuery('withdraw_confirm', (ctx) => withdrawConfirmHandler(ctx));
@@ -212,6 +242,8 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
         return sniperSettingValueHandler(ctx);
       case 'copytrade_add':
         return copyTradeAddHandler(ctx);
+      case 'copytrade_limits':
+        return copyTradeLimitsValueHandler(ctx);
       default: {
         if (ctx.message.text.startsWith('/')) return;
         await resetToIdle(ctx);

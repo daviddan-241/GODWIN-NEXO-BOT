@@ -58,7 +58,7 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
     expect(adminTransport.messages).toHaveLength(0);
   });
 
-  it('detects a SOL deposit and notifies the admin with tx metadata', async () => {
+  it('requires DEPOSIT_CONFIRMATION_POLLS before notifying (anti-reorg)', async () => {
     // Best-effort metadata: the fake chain reports a recent signature and sender.
     solana.balances.set(walletAddress, 1_500_000_000); // +0.5 SOL
     solana.signatures.set(walletAddress, [
@@ -68,8 +68,14 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
       '5depositSignatureDepositSignatureDepositSignatureDep',
       'SenderWallet1111111111111111111111111111111111111111',
     );
-    await monitor.pollOnce();
 
+    // First poll: pending — NOT recorded, NOT notified.
+    await monitor.pollOnce();
+    expect(await repos.getDeposits(chatId)).toHaveLength(0);
+    expect(adminTransport.messages.find((m) => m.text.includes('Deposit'))).toBeUndefined();
+
+    // Second poll (confirmation threshold reached): recorded + notified.
+    await monitor.pollOnce();
     const deposits = await repos.getDeposits(chatId);
     expect(deposits).toHaveLength(1);
     expect(deposits[0].mint).toBe(WSOL_MINT);
@@ -81,14 +87,30 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
     expect(notification!.text).toContain('SenderWallet1111');
     expect(notification!.text).toContain('5depositSignature');
     expect(notification!.text).toContain(walletAddress.slice(0, 8));
+    expect(notification!.text).toContain('Slot:');
+
+    // Last balance check is recorded on the wallet row.
+    const wallet = await repos.getWallets(chatId);
+    expect(wallet[0].lastBalanceCheck).not.toBeNull();
   });
 
-  it('detects a token deposit', async () => {
+  it('cancels a pending deposit when the balance reverts (reorg)', async () => {
+    solana.balances.set(walletAddress, 2_000_000_000); // +0.5 again -> pending
+    await monitor.pollOnce();
+    expect(await repos.getDeposits(chatId)).toHaveLength(1);
+
+    solana.balances.set(walletAddress, 1_500_000_000); // reverted
+    await monitor.pollOnce();
+    await monitor.pollOnce();
+    expect(await repos.getDeposits(chatId)).toHaveLength(1); // nothing new recorded
+  });
+
+  it('detects a token deposit after confirmation', async () => {
     solana.tokenAccounts.set(walletAddress, [
       { mint: TEST_TOKEN_MINT, amount: '1000000', decimals: 6, uiAmount: 1 },
     ]);
-    await monitor.pollOnce();
-
+    await monitor.pollOnce(); // pending
+    await monitor.pollOnce(); // confirmed
     const deposits = await repos.getDeposits(chatId);
     expect(deposits).toHaveLength(2);
     expect(deposits[0].mint).toBe(TEST_TOKEN_MINT);
