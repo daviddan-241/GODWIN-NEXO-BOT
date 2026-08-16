@@ -2,6 +2,8 @@
  * Application assembly: builds every real production dependency and wires
  * them together. Tests reuse the same `createBot` with injected doubles.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import type { Logger } from './logging/logger';
 import type { AppConfig } from './config/env';
 import { createDatabase, pingDatabase, type Database } from './db/client';
@@ -9,6 +11,8 @@ import { runMigrations } from './db/migrate';
 import { Repos } from './db/repos';
 import { ConnectionSolanaClient } from './solana/client';
 import { JupiterPriceProvider, JupiterSwapProvider } from './market/jupiter';
+import { CoinGeckoMarket } from './market/coingecko';
+import { DexScreenerTokenSearch } from './market/dexscreener';
 import { WalletService } from './wallet/service';
 import { TradingExecutor } from './trading/executor';
 import { PortfolioService } from './portfolio/service';
@@ -16,8 +20,10 @@ import { DepositMonitor } from './deposits/monitor';
 import { TelegramAdminTransport } from './admin/transport';
 import { AdminNotifier } from './admin/notifier';
 import { DbSessionStore } from './telegram/session';
-import { createBot, type BotInstance, type BotServices } from './telegram/bot';
+import { createBot, type BotInstance, type BotServices, InputFile } from './telegram/bot';
 import { createHealthServer } from './health/server';
+import { APP_NAME, APP_VERSION } from './config/constants';
+import { depositReceivedMessage } from './telegram/messages';
 
 export interface App {
   services: BotServices;
@@ -25,6 +31,15 @@ export interface App {
   database: Database;
   start(): Promise<void>;
   stop(): Promise<void>;
+}
+
+function resolveLogoPath(): string {
+  const candidates = [
+    path.resolve(__dirname, '..', '..', 'assets', 'nexo_logo_clean.png'),
+    path.resolve(__dirname, '..', 'assets', 'nexo_logo_clean.png'),
+  ];
+  for (const c of candidates) if (fs.existsSync(c)) return c;
+  return candidates[0];
 }
 
 export function createApp(config: AppConfig, logger: Logger, database: Database): App {
@@ -35,6 +50,8 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   });
   const prices = new JupiterPriceProvider(config.JUPITER_PRICE_API_URL, logger);
   const swaps = new JupiterSwapProvider(config.JUPITER_QUOTE_API_URL, logger);
+  const market = new CoinGeckoMarket(config.COINGECKO_API_URL, logger);
+  const tokens = new DexScreenerTokenSearch(config.DEXSCREENER_API_URL, logger);
   const transport = new TelegramAdminTransport(config);
   const notifier = new AdminNotifier(
     transport,
@@ -57,6 +74,8 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
     solana,
     prices,
     swaps,
+    market,
+    tokens,
     wallets,
     trading,
     portfolio,
@@ -66,12 +85,27 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
     sendToUser: async () => {
       throw new Error('sendToUser not wired yet');
     },
+    sendLogo: async () => {
+      // wired below, once the bot exists
+    },
   };
 
   const bot = createBot(services, config.BOT_TOKEN, config.telegramApiRoot);
-  // Wire the broadcast path to the real Bot API client.
+  // Wire the broadcast/deposit paths to the real Bot API client.
   services.sendToUser = (chatId, text) =>
     bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+  services.sendLogo = async (ctx) => {
+    const logo = resolveLogoPath();
+    if (fs.existsSync(logo)) {
+      await ctx.replyWithPhoto(new InputFile(logo)).catch((err) =>
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'logo send failed'),
+      );
+    }
+  };
+
+  // USER deposit notification (DEPOSIT RECEIVED) via the real Bot API.
+  deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol) =>
+    services.sendToUser(chatId, depositReceivedMessage(address, amountSol, newBalanceSol)).then(() => undefined);
 
   // Bot readiness is established once at startup (getMe above); the health
   // endpoint reports the cached result instead of re-calling the Bot API on
@@ -116,20 +150,21 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
           network: config.SOLANA_NETWORK,
           tradingAllowed: config.tradingAllowed,
           rpcUrl: config.rpcUrl,
+          appName: APP_NAME,
+          version: APP_VERSION,
         },
         'Telegram bot verified',
       );
 
       await bot.api
         .setMyCommands([
-          { command: 'start', description: 'Main menu' },
-          { command: 'wallet', description: 'Wallet info' },
-          { command: 'portfolio', description: 'Balances and P/L' },
-          { command: 'buy', description: 'Buy a token' },
-          { command: 'sell', description: 'Sell a token' },
-          { command: 'deposit', description: 'Deposit address' },
-          { command: 'withdraw', description: 'Withdraw funds' },
-          { command: 'settings', description: 'Trading preferences' },
+          { command: 'start', description: 'Open terminal' },
+          { command: 'wallet', description: 'Manage portfolio wallets' },
+          { command: 'generate', description: 'Create a new wallet' },
+          { command: 'import', description: 'Import an existing wallet' },
+          { command: 'status', description: 'Check wallet status' },
+          { command: 'help', description: 'Control center' },
+          { command: 'discover', description: 'Discover tokens' },
           { command: 'cancel', description: 'Abort current action' },
         ])
         .catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'setMyCommands failed (non-fatal)'));

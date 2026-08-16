@@ -21,13 +21,25 @@ const EnvSchema = z
 
     /**
      * ADMIN_IDS: comma-separated Telegram chat IDs that receive admin
-     * notifications. ADMIN_CHAT_IDS is accepted as a backwards-compatible
-     * alias. At least one of them is required.
+     * notifications. ADMIN_CHAT_IDS and OWNER_TELEGRAM_ID are accepted as
+     * backwards-compatible aliases. At least one of them is required.
      */
     ADMIN_IDS: z.string().optional(),
     ADMIN_CHAT_IDS: z.string().optional(),
+    OWNER_TELEGRAM_ID: z.string().optional(),
 
     APP_NAME: z.string().min(1).max(32).default('Nexo Snipe'),
+
+    /** Branding/links shown in the help screen. */
+    SUPPORT_USERNAME: z.string().default('ainexobotsupport'),
+    WEBSITE_URL: z.string().default('https://t.co/z1XgC7Zd6d'),
+    TWITTER_URL: z.string().default('https://x.com/Nexo?s=20'),
+    /** Minimum SOL balance required to trade (trade gate). */
+    MINIMUM_SOL: z.string().regex(/^\d+(\.\d+)?$/, 'MINIMUM_SOL must be a number').default('3.0000'),
+
+    /** Market data APIs. */
+    COINGECKO_API_URL: z.string().url().default('https://api.coingecko.com/api/v3'),
+    DEXSCREENER_API_URL: z.string().url().default('https://api.dexscreener.com'),
 
     SOLANA_NETWORK: z.enum(['devnet', 'mainnet']).default('devnet'),
     SOLANA_RPC_URL: z.string().url('SOLANA_RPC_URL must be a valid URL').optional(),
@@ -43,7 +55,8 @@ const EnvSchema = z
     JUPITER_QUOTE_API_URL: z.string().url().default('https://quote-api.jup.ag/v6'),
     JUPITER_PRICE_API_URL: z.string().url().default('https://api.jup.ag/price/v2'),
     DEFAULT_SLIPPAGE_BPS: z.coerce.number().int().min(1).max(10_000).default(100),
-    TRADING_MAX_SOL_PER_TRADE: z.coerce.number().positive().default(10),
+    /** Hard cap per single trade in SOL (covers the sniper range 0.0001–1000). */
+    TRADING_MAX_SOL_PER_TRADE: z.coerce.number().positive().default(1000),
     DEPOSIT_POLL_INTERVAL_MS: z.coerce.number().int().min(5_000).default(30_000),
 
     PORT: z.coerce.number().int().min(1).max(65_535).default(8080),
@@ -54,7 +67,7 @@ const EnvSchema = z
     TELEGRAM_API_ROOT: z.string().url().optional(),
   })
   .superRefine((env, ctx) => {
-    if (!env.ADMIN_IDS && !env.ADMIN_CHAT_IDS) {
+    if (!env.ADMIN_IDS && !env.ADMIN_CHAT_IDS && !env.OWNER_TELEGRAM_ID) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'ADMIN_IDS is required (comma-separated Telegram chat IDs, e.g. 123456789,987654321)',
@@ -66,7 +79,7 @@ const EnvSchema = z
 export type AppConfig = ReturnType<typeof toAppConfig>;
 
 function parseAdminIds(env: z.infer<typeof EnvSchema>): number[] {
-  const raw = (env.ADMIN_IDS ?? env.ADMIN_CHAT_IDS ?? '')
+  const raw = (env.ADMIN_IDS ?? env.ADMIN_CHAT_IDS ?? env.OWNER_TELEGRAM_ID ?? '')
     .split(',')
     .map((x) => x.trim())
     .filter(Boolean)

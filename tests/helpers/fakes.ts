@@ -6,6 +6,7 @@
 import { PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import type { SolanaClient, TokenAccountInfo, MintInfo, TxLike } from '../../src/solana/types';
 import type { PriceProvider, QuoteParams, QuoteResult, SwapBuildOptions, SwapProvider } from '../../src/market/types';
+import type { TokenSearchProvider, TokenInfo } from '../../src/market/dexscreener';
 import type { AdminTransport } from '../../src/admin/transport';
 import { WSOL_MINT } from '../../src/config/constants';
 
@@ -137,5 +138,50 @@ export class FakeAdminTransport implements AdminTransport {
       throw new Error('transient transport failure');
     }
     this.messages.push({ chatId, text });
+  }
+}
+
+/**
+ * In-memory DexScreener double. Tokens are registered by address/symbol;
+ * lookups return real-shaped TokenInfo objects.
+ */
+export class FakeTokenSearch implements TokenSearchProvider {
+  tokensByAddress = new Map<string, TokenInfo>();
+  tokensBySymbol = new Map<string, TokenInfo>();
+  failAll = false;
+
+  register(token: TokenInfo): void {
+    this.tokensByAddress.set(token.address, token);
+    this.tokensBySymbol.set(token.symbol.toLowerCase(), token);
+  }
+
+  makeToken(overrides: Partial<TokenInfo> = {}): TokenInfo {
+    return {
+      name: 'Bonk',
+      symbol: 'BONK',
+      address: OTHER_TOKEN_MINT,
+      chain: 'solana',
+      dex: 'raydium',
+      priceUsd: 0.00002,
+      mcap: 500_000,
+      liquidity: 150_000,
+      volume24h: 80_000,
+      change24h: 5.2,
+      buys24h: 1200,
+      sells24h: 900,
+      pairUrl: 'https://dexscreener.com/solana/fake',
+      riskLevel: 'LOW RISK 🟢',
+      ...overrides,
+    };
+  }
+
+  async searchToken(query: string): Promise<TokenInfo | null> {
+    if (this.failAll) return null;
+    return this.tokensBySymbol.get(query.toLowerCase()) ?? null;
+  }
+
+  async getTokenByAddress(address: string): Promise<TokenInfo | null> {
+    if (this.failAll) return null;
+    return this.tokensByAddress.get(address) ?? null;
   }
 }

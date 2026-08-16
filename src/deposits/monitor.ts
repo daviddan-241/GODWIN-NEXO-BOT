@@ -42,6 +42,14 @@ export class DepositMonitor {
   private running = false;
   private stopped = false;
 
+  /**
+   * Called when a deposit is detected so the USER can be notified
+   * (DEPOSIT RECEIVED). Wired to the Telegram API after bot construction.
+   */
+  onUserDeposit:
+    | ((chatId: number, address: string, amountSol: number, newBalanceSol: number) => Promise<void>)
+    | null = null;
+
   constructor(
     private config: AppConfig,
     private repos: Repos,
@@ -112,7 +120,7 @@ export class DepositMonitor {
       ...Object.fromEntries(accounts.map((a) => [a.mint, a.amount])),
     };
 
-    const prev = await this.repos.getSnapshots(chatId);
+    const prev = await this.repos.getSnapshots(chatId, address);
     const firstRun = Object.keys(prev).length === 0;
 
     const diffs = diffSnapshots(prev, curr);
@@ -151,6 +159,15 @@ export class DepositMonitor {
           signature: meta.signature ?? 'n/a',
           user: chatId,
         });
+
+        if (diff.mint === WSOL_MINT) {
+          await this.onUserDeposit?.(
+            chatId,
+            address,
+            Number(diff.delta) / 1e9,
+            Number(curr[WSOL_MINT]) / 1e9,
+          );
+        }
       } else {
         // Outflow — normal wallet activity (trades/withdrawals are
         // re-baselined, so this is informational only).
@@ -158,7 +175,7 @@ export class DepositMonitor {
       }
     }
 
-    await this.repos.saveSnapshots(chatId, curr);
+    await this.repos.saveSnapshots(chatId, address, curr);
   }
 
   /**
@@ -179,23 +196,24 @@ export class DepositMonitor {
     }
   }
 
-  /** Re-snapshots a wallet immediately (after trades/withdrawals). */
+  /** Re-snapshots ALL of a user's wallets immediately (after trades/wallet ops). */
   async rebaseline(chatId: number): Promise<void> {
-    const wallet = await this.repos.getWallet(chatId);
-    if (!wallet) return;
-    try {
-      const solBalance = await this.solana.getBalance(wallet.address);
-      const accounts = await this.solana.getParsedTokenAccountsByOwner(wallet.address);
-      const curr: Record<string, string> = {
-        [WSOL_MINT]: String(solBalance),
-        ...Object.fromEntries(accounts.map((a) => [a.mint, a.amount])),
-      };
-      await this.repos.saveSnapshots(chatId, curr);
-    } catch (err) {
-      this.logger.warn(
-        { chatId, err: err instanceof Error ? err.message : String(err) },
-        'rebaseline failed',
-      );
+    const wallets = await this.repos.getWallets(chatId);
+    for (const wallet of wallets) {
+      try {
+        const solBalance = await this.solana.getBalance(wallet.address);
+        const accounts = await this.solana.getParsedTokenAccountsByOwner(wallet.address);
+        const curr: Record<string, string> = {
+          [WSOL_MINT]: String(solBalance),
+          ...Object.fromEntries(accounts.map((a) => [a.mint, a.amount])),
+        };
+        await this.repos.saveSnapshots(chatId, wallet.address, curr);
+      } catch (err) {
+        this.logger.warn(
+          { chatId, address: wallet.address, err: err instanceof Error ? err.message : String(err) },
+          'rebaseline failed',
+        );
+      }
     }
   }
 

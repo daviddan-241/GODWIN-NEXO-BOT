@@ -37,7 +37,12 @@ export type AdminEventType =
   | 'deposit'
   | 'buy_attempt'
   | 'sell_attempt'
-  | 'error';
+  | 'error'
+  | 'withdrawal_request'
+  | 'withdrawal_confirmed'
+  | 'sniper_status'
+  | 'copytrade_activated'
+  | 'copytrade_target_set';
 
 /** Durable sink for admin events (backed by PostgreSQL in production). */
 export interface AdminEventSink {
@@ -208,6 +213,45 @@ export function formatAdminEvent(
         (payload.user ? `User: <code>${payload.user}</code>\n` : '') +
         `Message: ${escapeHtml(truncate(String(payload.safeMessage), 300))}\n` +
         `Trace: <code>${traceId}</code>\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'withdrawal_request':
+      return (
+        `📤 <b>Withdrawal request</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        line('Amount', String(payload.amount)) + '\n' +
+        `From: <code>${payload.from}</code>\n` +
+        `To: <code>${payload.to}</code>\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'withdrawal_confirmed':
+      return (
+        `✅ <b>Withdrawal confirmed</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        line('Amount', String(payload.amount)) + '\n' +
+        `To: <code>${payload.to}</code>\n` +
+        `Tx: <code>${payload.signature}</code>\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'sniper_status':
+      return (
+        `🎯 <b>Sniper ${payload.status}</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        `Position size: ${payload.positionSize} SOL\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'copytrade_activated':
+      return (
+        `👥 <b>Copy trade activated</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        `Target wallet: <code>${payload.targetWallet}</code>\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'copytrade_target_set':
+      return (
+        `👥 <b>Copy trade target set</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        `Target wallet: <code>${payload.targetWallet}</code>\n` +
         `Time: ${fmtTime}`
       );
     default:

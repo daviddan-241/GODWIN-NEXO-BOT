@@ -53,6 +53,7 @@ describeDb('database layer (real PostgreSQL)', () => {
       encryptedSecret: { v: 1, kdf: 'scrypt', salt: 'x', iv: 'y', tag: 'z', ct: 'ciphertext' },
       derivation: 'mnemonic',
       walletNumber: 1,
+      type: 'generated',
     });
     const w = await repos.getWallet(900001);
     expect(w?.address).toBe('WalletAddress111111111111111111111111111111111');
@@ -100,12 +101,16 @@ describeDb('database layer (real PostgreSQL)', () => {
     expect(list[0].amount).toBe('1000');
   });
 
-  it('balance snapshots upsert by (chat_id, mint)', async () => {
-    await repos.saveSnapshots(900001, { SOL: '1', TOKEN: '2' });
-    await repos.saveSnapshots(900001, { SOL: '3' });
-    const snap = await repos.getSnapshots(900001);
+  it('balance snapshots upsert by (chat_id, address, mint)', async () => {
+    await repos.saveSnapshots(900001, 'addrA', { SOL: '1', TOKEN: '2' });
+    await repos.saveSnapshots(900001, 'addrA', { SOL: '3' });
+    const snap = await repos.getSnapshots(900001, 'addrA');
     expect(snap.SOL).toBe('3');
     expect(snap.TOKEN).toBe('2'); // untouched mint preserved
+    // Multi-wallet isolation:
+    await repos.saveSnapshots(900001, 'addrB', { SOL: '9' });
+    expect((await repos.getSnapshots(900001, 'addrA')).SOL).toBe('3');
+    expect((await repos.getSnapshots(900001, 'addrB')).SOL).toBe('9');
   });
 
   it('counts trades/deposits for the last 24h', async () => {
@@ -121,6 +126,7 @@ describeDb('database layer (real PostgreSQL)', () => {
         encryptedSecret: {},
         derivation: 'private_key',
         walletNumber: 1,
+        type: 'generated',
       }),
     ).rejects.toThrow();
   });

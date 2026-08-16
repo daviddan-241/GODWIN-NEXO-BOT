@@ -4,9 +4,10 @@
  */
 import type { BotContext } from '../bot';
 import { IDLE_STATE } from '../session';
-import { ERROR_PREFIX, NOT_PRIVATE_TEXT } from '../messages';
-import { mainMenuKeyboard } from '../keyboards';
 import { escapeHtml } from '../../util/format';
+
+export const ERROR_PREFIX = 'Something went wrong:';
+export const NOT_PRIVATE_TEXT = 'This bot works in private chats. Open a chat with the bot to use it.';
 
 export async function transition(
   ctx: BotContext,
@@ -38,10 +39,6 @@ export async function answerCallback(ctx: BotContext, text?: string): Promise<vo
   // slash commands (no callback_query exists in the latter case).
   if (!ctx.callbackQuery?.id) return;
   await ctx.answerCallbackQuery({ text, show_alert: false }).catch(() => undefined);
-}
-
-export async function replyMenu(ctx: BotContext, text: string): Promise<void> {
-  await ctx.reply(text, { parse_mode: 'HTML', reply_markup: mainMenuKeyboard() });
 }
 
 /**
@@ -83,10 +80,6 @@ export function safeHandler(
       // Handlers that must abort set the state themselves; /cancel resets.
     }
   };
-}
-
-export async function notifyAdmins(ctx: BotContext, text: string): Promise<void> {
-  await ctx.services.notifier.send(text);
 }
 
 export function networkLabel(ctx: BotContext): string {

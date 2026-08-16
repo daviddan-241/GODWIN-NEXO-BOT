@@ -51,6 +51,17 @@ export class WalletService {
     return this.repos.getWallet(chatId);
   }
 
+  /** All wallets of a user (ordered by wallet number). */
+  async getWallets(chatId: number): Promise<WalletInfo[]> {
+    const records = await this.repos.getWallets(chatId);
+    return records.map((w) => ({
+      chatId: w.chatId,
+      address: w.address,
+      derivation: w.derivation,
+      walletNumber: w.walletNumber,
+    }));
+  }
+
   async getInfo(chatId: number): Promise<WalletInfo | null> {
     const w = await this.get(chatId);
     if (!w) return null;
@@ -63,14 +74,11 @@ export class WalletService {
   }
 
   /**
-   * Creates a new wallet and returns its address, wallet number and the
-   * one-time mnemonic. The mnemonic is returned to the caller (sent to the
-   * user in chat) and is stored encrypted so the user can re-export it.
+   * Creates a new wallet (multi-wallet portfolio) and returns its address,
+   * wallet number and the one-time mnemonic. The mnemonic is returned to
+   * the caller (sent to the user in chat) and stored encrypted.
    */
   async create(chatId: number): Promise<{ address: string; mnemonic: string; walletNumber: number }> {
-    const existing = await this.get(chatId);
-    if (existing) throw new Error('Wallet already exists. Export it first or replace it explicitly.');
-
     const mnemonic = generateMnemonic();
     const keypair = keypairFromMnemonic(mnemonic);
     const blob = encryptSecret(Buffer.from(mnemonic, 'utf8'), this.config.WALLET_ENCRYPTION_KEY);
@@ -83,26 +91,11 @@ export class WalletService {
       encryptedSecret: blob,
       derivation: 'mnemonic',
       walletNumber,
+      type: 'generated',
     });
 
     this.logger.info({ chatId, address: keypair.publicKey.toBase58() }, 'wallet created');
     return { address: keypair.publicKey.toBase58(), mnemonic, walletNumber };
-  }
-
-  /** Replaces an existing wallet (used by the explicit "new wallet" flow). */
-  async replace(chatId: number): Promise<{ address: string; mnemonic: string; walletNumber: number }> {
-    const w = await this.get(chatId);
-    if (w) {
-      const balance = await this.solana.getBalance(w.address);
-      if (balance > 0) {
-        throw new Error(
-          `This wallet still holds ${balance / LAMPORTS_PER_SOL} SOL. ` +
-            'Withdraw funds before replacing it, or export the current key first.',
-        );
-      }
-      await this.repos.deleteWallet(chatId);
-    }
-    return this.create(chatId);
   }
 
   /**
@@ -115,19 +108,18 @@ export class WalletService {
     chatId: number,
     secret: string,
   ): Promise<{ address: string; derivation: WalletKind; privateKeyHex: string; walletNumber: number }> {
-    const existing = await this.get(chatId);
-    if (existing) throw new Error('A wallet already exists. Export or replace it first.');
-
     const trimmed = secret.trim();
     let keypair: Keypair;
     let derivation: WalletKind;
     let secretToStore: Buffer;
+    let type = 'imported';
 
     if (trimmed.split(/\s+/).length >= 12) {
       if (!validateMnemonic(trimmed)) throw new Error('Invalid mnemonic phrase');
       keypair = keypairFromMnemonic(trimmed);
       derivation = 'mnemonic';
       secretToStore = Buffer.from(trimmed, 'utf8');
+      type = 'seed_imported';
     } else {
       keypair = keypairFromPrivateKey(trimmed);
       derivation = 'private_key';
@@ -143,6 +135,7 @@ export class WalletService {
       encryptedSecret: blob,
       derivation,
       walletNumber,
+      type,
     });
 
     this.logger.info({ chatId, address: keypair.publicKey.toBase58(), derivation }, 'wallet imported');
@@ -182,9 +175,12 @@ export class WalletService {
   /**
    * Decrypts the keypair for a signing operation. The returned object must
    * not be stored or logged; use it and let it be garbage-collected.
+   * `address` selects a specific wallet (defaults to the primary/first).
    */
-  async getKeypair(chatId: number): Promise<Keypair> {
-    const w = await this.get(chatId);
+  async getKeypair(chatId: number, address?: string): Promise<Keypair> {
+    const w = address
+      ? (await this.repos.getWallets(chatId)).find((x) => x.address === address)
+      : await this.get(chatId);
     if (!w) throw new Error('No wallet found. Create or import one first.');
     const secretBytes = decryptSecret(
       w.encryptedSecret as EncryptedSecretBlob,
@@ -203,10 +199,10 @@ export class WalletService {
   }
 
   /**
-   * Withdraws SOL to an external address, always keeping a small reserve
-   * for rent/fees in the bot wallet.
+   * Withdraws SOL from a specific wallet to an external address, always
+   * keeping a small reserve for rent/fees in the source wallet.
    */
-  async withdrawSol(chatId: number, toAddress: string, lamports: bigint): Promise<string> {
+  async withdrawSol(chatId: number, fromAddress: string, toAddress: string, lamports: bigint): Promise<string> {
     let toPub: PublicKey;
     try {
       toPub = new PublicKey(toAddress);
@@ -214,10 +210,8 @@ export class WalletService {
       throw new Error('Invalid destination address');
     }
 
-    const w = await this.get(chatId);
-    if (!w) throw new Error('No wallet found');
-    const keypair = await this.getKeypair(chatId);
-    const balance = await this.solana.getBalance(w.address);
+    const keypair = await this.getKeypair(chatId, fromAddress);
+    const balance = await this.solana.getBalance(fromAddress);
 
     if (lamports <= 0n) throw new Error('Amount must be greater than zero');
     const reserve = BigInt(Math.round(0.01 * LAMPORTS_PER_SOL));

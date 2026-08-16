@@ -13,6 +13,9 @@ import {
   deposits,
   balanceSnapshots,
   adminEvents,
+  sniperSettings,
+  positions,
+  copyTrade,
 } from './schema';
 
 export interface UserRecord {
@@ -34,7 +37,33 @@ export interface WalletRecord {
   encryptedSecret: unknown;
   derivation: 'mnemonic' | 'private_key';
   walletNumber: number;
+  type: string;
   createdAt: Date;
+}
+
+export interface SniperSettingsRecord {
+  chatId: number;
+  status: string;
+  positionSize: number;
+  maxDevHold: number;
+  slippage: number;
+  priorityFee: number;
+  takeProfit: number;
+  stopLoss: number;
+  antiRug: boolean;
+}
+
+export interface PositionRecord {
+  id: number;
+  chatId: number;
+  tokenAddress: string;
+  tokenSymbol: string;
+  tokenName: string;
+  amountSol: number;
+  entryPriceUsd: number;
+  status: 'open' | 'closed';
+  openedAt: Date;
+  closedAt: Date | null;
 }
 
 export interface TradeRecord {
@@ -161,8 +190,23 @@ export class Repos {
 
   // ---- wallets ---------------------------------------------------------
   async getWallet(chatId: number): Promise<WalletRecord | null> {
-    const rows = await this.db.select().from(wallets).where(eq(wallets.chatId, chatId)).limit(1);
+    const rows = await this.db
+      .select()
+      .from(wallets)
+      .where(eq(wallets.chatId, chatId))
+      .orderBy(wallets.walletNumber)
+      .limit(1);
     return (rows[0] as WalletRecord | undefined) ?? null;
+  }
+
+  /** All wallets of a user, ordered by wallet number. */
+  async getWallets(chatId: number): Promise<WalletRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(wallets)
+      .where(eq(wallets.chatId, chatId))
+      .orderBy(wallets.walletNumber);
+    return rows as WalletRecord[];
   }
 
   async allWallets(): Promise<WalletRecord[]> {
@@ -170,28 +214,155 @@ export class Repos {
   }
 
   async saveWallet(w: Omit<WalletRecord, 'createdAt'>): Promise<void> {
-    await this.db
-      .insert(wallets)
-      .values({
-        chatId: w.chatId,
-        address: w.address,
-        encryptedSecret: w.encryptedSecret,
-        derivation: w.derivation,
-        walletNumber: w.walletNumber,
-      })
-      .onConflictDoUpdate({
-        target: wallets.chatId,
-        set: {
-          address: w.address,
-          encryptedSecret: w.encryptedSecret,
-          derivation: w.derivation,
-          walletNumber: w.walletNumber,
-        },
-      });
+    await this.db.insert(wallets).values({
+      chatId: w.chatId,
+      address: w.address,
+      encryptedSecret: w.encryptedSecret,
+      derivation: w.derivation,
+      walletNumber: w.walletNumber,
+      type: w.type,
+    });
   }
 
-  async deleteWallet(chatId: number): Promise<void> {
+  async deleteWalletByAddress(chatId: number, address: string): Promise<void> {
+    await this.db
+      .delete(wallets)
+      .where(and(eq(wallets.chatId, chatId), eq(wallets.address, address)));
+  }
+
+  async deleteAllWallets(chatId: number): Promise<void> {
     await this.db.delete(wallets).where(eq(wallets.chatId, chatId));
+  }
+
+  // ---- sniper settings --------------------------------------------------
+  async getSniperSettings(chatId: number): Promise<SniperSettingsRecord> {
+    const rows = await this.db
+      .select()
+      .from(sniperSettings)
+      .where(eq(sniperSettings.chatId, chatId))
+      .limit(1);
+    return (rows[0] as SniperSettingsRecord | undefined) ?? {
+      chatId,
+      status: 'STANDBY',
+      positionSize: 10,
+      maxDevHold: 20,
+      slippage: 10,
+      priorityFee: 0.001,
+      takeProfit: 100,
+      stopLoss: 30,
+      antiRug: true,
+    };
+  }
+
+  async updateSniperSettings(
+    chatId: number,
+    patch: Partial<Omit<SniperSettingsRecord, 'chatId'>>,
+  ): Promise<SniperSettingsRecord> {
+    const current = await this.getSniperSettings(chatId);
+    const merged = { ...current, ...patch };
+    await this.db
+      .insert(sniperSettings)
+      .values({
+        chatId,
+        status: merged.status,
+        positionSize: merged.positionSize,
+        maxDevHold: merged.maxDevHold,
+        slippage: merged.slippage,
+        priorityFee: merged.priorityFee,
+        takeProfit: merged.takeProfit,
+        stopLoss: merged.stopLoss,
+        antiRug: merged.antiRug,
+      })
+      .onConflictDoUpdate({
+        target: sniperSettings.chatId,
+        set: {
+          status: merged.status,
+          positionSize: merged.positionSize,
+          maxDevHold: merged.maxDevHold,
+          slippage: merged.slippage,
+          priorityFee: merged.priorityFee,
+          takeProfit: merged.takeProfit,
+          stopLoss: merged.stopLoss,
+          antiRug: merged.antiRug,
+          updatedAt: new Date(),
+        },
+      });
+    return merged;
+  }
+
+  // ---- positions --------------------------------------------------------
+  async addPosition(p: {
+    chatId: number;
+    tokenAddress: string;
+    tokenSymbol: string;
+    tokenName: string;
+    amountSol: number;
+    entryPriceUsd: number;
+  }): Promise<PositionRecord> {
+    const rows = await this.db
+      .insert(positions)
+      .values({
+        chatId: p.chatId,
+        tokenAddress: p.tokenAddress,
+        tokenSymbol: p.tokenSymbol,
+        tokenName: p.tokenName,
+        amountSol: p.amountSol,
+        entryPriceUsd: p.entryPriceUsd,
+        status: 'open',
+      })
+      .returning();
+    return rows[0] as PositionRecord;
+  }
+
+  async getOpenPositions(chatId: number): Promise<PositionRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(positions)
+      .where(and(eq(positions.chatId, chatId), eq(positions.status, 'open')))
+      .orderBy(desc(positions.openedAt));
+    return rows as PositionRecord[];
+  }
+
+  async closePosition(chatId: number, tokenAddress: string): Promise<void> {
+    await this.db
+      .update(positions)
+      .set({ status: 'closed', closedAt: new Date() })
+      .where(
+        and(
+          eq(positions.chatId, chatId),
+          eq(positions.tokenAddress, tokenAddress),
+          eq(positions.status, 'open'),
+        ),
+      );
+  }
+
+  // ---- copy trade -------------------------------------------------------
+  async getCopyTrade(chatId: number): Promise<{ chatId: number; targetWallet: string | null; status: string }> {
+    const rows = await this.db.select().from(copyTrade).where(eq(copyTrade.chatId, chatId)).limit(1);
+    return (rows[0] as { chatId: number; targetWallet: string | null; status: string } | undefined) ?? {
+      chatId,
+      targetWallet: null,
+      status: 'STANDBY',
+    };
+  }
+
+  async updateCopyTrade(
+    chatId: number,
+    patch: { targetWallet?: string; status?: string },
+  ): Promise<void> {
+    const current = await this.getCopyTrade(chatId);
+    const merged = {
+      chatId,
+      targetWallet: patch.targetWallet ?? current.targetWallet,
+      status: patch.status ?? current.status,
+    };
+    await this.db
+      .insert(copyTrade)
+      .values({ chatId, targetWallet: merged.targetWallet, status: merged.status })
+      .onConflictDoUpdate({
+        target: copyTrade.chatId,
+        set: { targetWallet: merged.targetWallet, status: merged.status, updatedAt: new Date() },
+      });
   }
 
   // ---- sessions --------------------------------------------------------
@@ -324,23 +495,23 @@ export class Repos {
   }
 
   // ---- balance snapshots ------------------------------------------------
-  async getSnapshots(chatId: number): Promise<Record<string, string>> {
+  async getSnapshots(chatId: number, address: string): Promise<Record<string, string>> {
     const rows = await this.db
       .select()
       .from(balanceSnapshots)
-      .where(eq(balanceSnapshots.chatId, chatId));
+      .where(and(eq(balanceSnapshots.chatId, chatId), eq(balanceSnapshots.address, address)));
     const out: Record<string, string> = {};
     for (const r of rows) out[r.mint] = r.amount;
     return out;
   }
 
-  async saveSnapshots(chatId: number, amounts: Record<string, string>): Promise<void> {
+  async saveSnapshots(chatId: number, address: string, amounts: Record<string, string>): Promise<void> {
     for (const [mint, amount] of Object.entries(amounts)) {
       await this.db
         .insert(balanceSnapshots)
-        .values({ chatId, mint, amount })
+        .values({ chatId, address, mint, amount })
         .onConflictDoUpdate({
-          target: [balanceSnapshots.chatId, balanceSnapshots.mint],
+          target: [balanceSnapshots.chatId, balanceSnapshots.address, balanceSnapshots.mint],
           set: { amount, updatedAt: new Date() },
         });
     }

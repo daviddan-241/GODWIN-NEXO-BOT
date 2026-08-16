@@ -14,7 +14,7 @@ export interface OutgoingMessage {
   method: string;
   chat_id: number;
   text?: string;
-  payload: unknown;
+  payload: any;
 }
 
 export interface EnqueuedUpdate {
@@ -116,6 +116,20 @@ export class MockBotApiServer {
       return;
     }
     const method = match[1];
+
+    // sendPhoto / sendDocument arrive as multipart/form-data: record the
+    // call WITHOUT parsing the binary body (checked before JSON.parse so a
+    // multipart payload can never crash the mock).
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      this.outgoing.push({
+        method,
+        chat_id: 0,
+        payload: { multipart: true, contentType: req.headers['content-type'] },
+      });
+      res.end(JSON.stringify({ ok: true, result: { message_id: ++this.updateCounter } }));
+      return;
+    }
+
     const payload = body ? JSON.parse(body) : {};
     if (this.logRequests) console.error(`[mock-bot-api] ${method} ${body.slice(0, 120)}`);
 
@@ -166,9 +180,15 @@ export class MockBotApiServer {
       case 'editMessageReplyMarkup':
       case 'deleteMessage':
       case 'deleteWebhook':
-      case 'sendChatAction': {
-        const p = payload as { chat_id?: number };
-        this.outgoing.push({ method, chat_id: p.chat_id ?? 0, payload });
+      case 'sendChatAction':
+      case 'sendPhoto': {
+        const p = payload as { chat_id?: number; text?: string; caption?: string };
+        this.outgoing.push({
+          method,
+          chat_id: p.chat_id ?? 0,
+          text: p.text ?? p.caption,
+          payload,
+        });
         res.end(JSON.stringify({ ok: true, result: true }));
         return;
       }

@@ -59,7 +59,7 @@ async function main(): Promise<void> {
     // 3. Private-key import path
     const keypair = await wallets.getKeypair(VERIFY_CHAT_ID);
     const hex = Buffer.from(keypair.secretKey.slice(0, 32)).toString('hex');
-    await repos.deleteWallet(VERIFY_CHAT_ID);
+    await repos.deleteAllWallets(VERIFY_CHAT_ID);
     const imported = await wallets.import(VERIFY_CHAT_ID, hex);
     if (imported.address !== address) {
       throw new Error('FATAL: private-key import produced a different address');
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
 
     console.log('\nWallet verification: ALL CHECKS PASSED (no secrets printed).');
   } finally {
-    await repos.deleteWallet(VERIFY_CHAT_ID).catch(() => undefined);
+    await repos.deleteAllWallets(VERIFY_CHAT_ID).catch(() => undefined);
     await database.pool.end();
   }
 }

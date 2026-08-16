@@ -1,0 +1,36 @@
+# Render Blueprint: PostgreSQL + the bot as a Docker web service.
+# Deploy via: New > Blueprint (or wire manually per README).
+services:
+  - type: web
+    name: nexo-snipe-bot
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SOLANA_NETWORK
+        value: devnet
+      - key: SOLANA_MAINNET_ENABLED
+        value: 'false'
+      - key: MINIMUM_SOL
+        value: '3.0000'
+      - key: LOG_LEVEL
+        value: info
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: WALLET_ENCRYPTION_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexo-snipe-db
+          property: connectionString
+
+databases:
+  - name: nexo-snipe-db
+    databaseName: hfive
+    user: hfive
+    plan: free

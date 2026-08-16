@@ -1,74 +1,68 @@
 /**
- * Telegram bot layer: grammY wiring, session middleware, command and
- * callback routing, and the dependency container handed to handlers.
+ * Telegram bot layer: grammY wiring for the NEXO TRADING TERMINAL UI,
+ * session middleware, command/callback routing and the dependency
+ * container handed to handlers.
  */
-import { Bot, Context } from 'grammy';
+import { Bot, Context, InputFile } from 'grammy';
 import type { Logger } from '../logging/logger';
 import type { AppConfig } from '../config/env';
 import type { Repos } from '../db/repos';
 import type { SolanaClient } from '../solana/types';
 import type { PriceProvider, SwapProvider } from '../market/types';
+import type { CoinGeckoMarket } from '../market/coingecko';
+import type { TokenSearchProvider } from '../market/dexscreener';
 import type { WalletService } from '../wallet/service';
 import type { TradingExecutor } from '../trading/executor';
 import type { PortfolioService } from '../portfolio/service';
 import type { DepositMonitor } from '../deposits/monitor';
 import type { AdminNotifier } from '../admin/notifier';
 import type { SessionData, SessionStore } from './session';
-import { mainMenuKeyboard } from './keyboards';
+import { dashboard } from './handlers/nexo';
 import {
   startHandler,
-  menuHandler,
+  dashboardHandler,
+  refreshHandler,
   helpHandler,
   cancelHandler,
-} from './handlers/menu';
-import {
-  showWalletHandler,
-  walletCreateConfirmHandler,
-  walletCreateReplaceHandler,
+  walletHandler,
+  generateWalletHandler,
   walletImportPromptHandler,
+  walletSeedPromptHandler,
   walletImportHandleSecretHandler,
-  walletExportConfirmHandler,
-  walletExportRevealHandler,
-} from './handlers/wallet';
-import { walletImportPromptHandler as importPromptHandler } from './handlers/wallet';
-import { showDepositHandler } from './handlers/deposit';
-import {
+  walletStatusHandler,
+  walletRefreshHandler,
+  walletDisconnectHandler,
   withdrawStartHandler,
-  withdrawPickHandler,
   withdrawAddressHandler,
   withdrawAmountHandler,
   withdrawConfirmHandler,
-} from './handlers/withdraw';
-import {
-  buyStartHandler,
-  buyTokenHandler,
-  buyAmountCallbackHandler,
-  buyAmountTextHandler,
+  discoverHandler,
+  tradeHandler,
+  tradeBuyStartHandler,
+  tradeSellStartHandler,
+  searchTokenHandler,
+  buyFromSearchHandler,
+  buyFromTradeHandler,
   buyConfirmHandler,
-} from './handlers/buy';
-import {
-  sellStartHandler,
-  sellPickHandler,
-  sellPctCallbackHandler,
-  sellPctTextHandler,
-  sellConfirmHandler,
-} from './handlers/sell';
-import { showPortfolioHandler } from './handlers/portfolio';
-import {
-  settingsShowHandler,
-  settingsSlippageMenuHandler,
-  settingsSlippageSetHandler,
-  settingsSlippageCustomPromptHandler,
-  settingsSlippageCustomHandler,
-  settingsBuyAmountMenuHandler,
-  settingsBuyAmountSetHandler,
-  settingsBuyAmountCustomPromptHandler,
-  settingsBuyAmountCustomHandler,
-  settingsPriorityFeeMenuHandler,
-  settingsPriorityFeeSetHandler,
-} from './handlers/settings';
-import { statsHandler, broadcastHandler } from './handlers/admin';
+  sellFromSearchHandler,
+  sellFromTradeHandler,
+  sellAmountHandler,
+  positionsHandler,
+  sniperHandler,
+  sniperActivateHandler,
+  sniperPauseHandler,
+  sniperAntiRugHandler,
+  sniperSettingPromptHandler,
+  sniperSettingValueHandler,
+  copyTradeHandler,
+  copyTradeStartHandler,
+  copyTradeConfigurePromptHandler,
+  copyTradeAddHandler,
+  statsHandler,
+  broadcastHandler,
+} from './handlers/nexo';
 import { resetToIdle } from './handlers/common';
+import { IDLE_STATE } from './session';
 
 export interface BotServices {
   config: AppConfig;
@@ -77,6 +71,8 @@ export interface BotServices {
   solana: SolanaClient;
   prices: PriceProvider;
   swaps: SwapProvider;
+  market: CoinGeckoMarket;
+  tokens: TokenSearchProvider;
   wallets: WalletService;
   trading: TradingExecutor;
   portfolio: PortfolioService;
@@ -85,6 +81,8 @@ export interface BotServices {
   sessions: SessionStore;
   /** Sends a message to an arbitrary chat (wired to bot.api after construction). */
   sendToUser: (chatId: number, text: string) => Promise<unknown>;
+  /** Sends the NEXO logo photo to the current chat. */
+  sendLogo: (ctx: BotContext) => Promise<void>;
 }
 
 export type BotContext = Context & { session: SessionData; services: BotServices };
@@ -132,115 +130,97 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   });
 
   // ------------------------------------------------------------------
-  // Commands.
+  // Commands (matching the help screen).
   // ------------------------------------------------------------------
   bot.command('start', (ctx) => startHandler(ctx));
-  bot.command('menu', (ctx) => menuHandler(ctx));
+  bot.command('menu', (ctx) => dashboardHandler(ctx));
+  bot.command('wallet', (ctx) => walletHandler(ctx));
+  bot.command('generate', (ctx) => generateWalletHandler(ctx));
+  bot.command('import', (ctx) => walletImportPromptHandler(ctx));
+  bot.command('status', (ctx) => walletStatusHandler(ctx));
   bot.command('help', (ctx) => helpHandler(ctx));
+  bot.command('discover', (ctx) => discoverHandler(ctx));
   bot.command('cancel', (ctx) => cancelHandler(ctx));
-  bot.command('import', (ctx) => importPromptHandler(ctx));
-  bot.command('wallet', (ctx) => showWalletHandler(ctx));
-  bot.command('portfolio', (ctx) => showPortfolioHandler(ctx));
-  bot.command('buy', (ctx) => buyStartHandler(ctx));
-  bot.command('sell', (ctx) => sellStartHandler(ctx));
-  bot.command('deposit', (ctx) => showDepositHandler(ctx));
-  bot.command('withdraw', (ctx) => withdrawStartHandler(ctx));
-  bot.command('settings', (ctx) => settingsShowHandler(ctx));
   bot.command('stats', (ctx) => statsHandler(ctx));
   bot.command('broadcast', (ctx) => broadcastHandler(ctx, ctx.match.trim()));
 
   // ------------------------------------------------------------------
   // Callback queries (inline keyboard actions).
-  // Routes are matched longest-prefix-first so sub-actions win.
   // ------------------------------------------------------------------
-  type CallbackRoute = [string, (ctx: BotContext, arg: string) => Promise<void>];
-  const routes: CallbackRoute[] = [
-    ['wallet:export:reveal', (c) => walletExportRevealHandler(c)],
-    ['wallet:create:replace', (c) => walletCreateReplaceHandler(c)],
-    ['settings:slippage:custom', (c) => settingsSlippageCustomPromptHandler(c)],
-    ['settings:buyamount:custom', (c) => settingsBuyAmountCustomPromptHandler(c)],
-    ['buy:confirm', (c) => buyConfirmHandler(c)],
-    ['sell:confirm', (c) => sellConfirmHandler(c)],
-    ['withdraw:confirm', (c) => withdrawConfirmHandler(c)],
-    ['buy:amount', (c, v) => buyAmountCallbackHandler(c, v)],
-    ['buy:start', (c) => buyStartHandler(c)],
-    ['sell:pick', (c, v) => sellPickHandler(c, v)],
-    ['sell:pct', (c, v) => sellPctCallbackHandler(c, v)],
-    ['sell:start', (c) => sellStartHandler(c)],
-    ['withdraw:pick', (c, v) => withdrawPickHandler(c, v)],
-    ['withdraw:start', (c) => withdrawStartHandler(c)],
-    ['wallet:refresh', (c) => showWalletHandler(c)],
-    ['wallet:show', (c) => showWalletHandler(c)],
-    ['wallet:create', (c) => walletCreateConfirmHandler(c)],
-    ['wallet:import', (c) => walletImportPromptHandler(c)],
-    ['wallet:export', (c) => walletExportConfirmHandler(c)],
-    ['deposit:show', (c) => showDepositHandler(c)],
-    ['portfolio:show', (c) => showPortfolioHandler(c)],
-    ['settings:slippage', (c, v) => (v ? settingsSlippageSetHandler(c, v) : settingsSlippageMenuHandler(c))],
-    ['settings:buyamount', (c, v) => (v ? settingsBuyAmountSetHandler(c, v) : settingsBuyAmountMenuHandler(c))],
-    ['settings:priofee', (c, v) => (v ? settingsPriorityFeeSetHandler(c, v) : settingsPriorityFeeMenuHandler(c))],
-    ['settings:show', (c) => settingsShowHandler(c)],
-    ['menu:main', (c) => menuHandler(c)],
-    ['help:show', (c) => helpHandler(c)],
-    ['cancel', (c) => cancelHandler(c)],
-  ];
-  routes.sort((a, b) => b[0].length - a[0].length);
-
-  bot.on('callback_query:data', async (ctx) => {
-    const data = ctx.callbackQuery.data;
-    let handled = false;
-    for (const [prefix, fn] of routes) {
-      if (data === prefix) {
-        await ctx.answerCallbackQuery().catch(() => undefined);
-        await fn(ctx, '');
-        handled = true;
-        break;
-      }
-      if (data.startsWith(`${prefix}:`)) {
-        await ctx.answerCallbackQuery().catch(() => undefined);
-        await fn(ctx, data.slice(prefix.length + 1));
-        handled = true;
-        break;
-      }
-    }
-    if (!handled) {
-      await ctx.answerCallbackQuery().catch(() => undefined);
-    }
-  });
+  bot.callbackQuery('back_dashboard', (ctx) => dashboardHandler(ctx));
+  bot.callbackQuery('refresh', (ctx) => refreshHandler(ctx));
+  bot.callbackQuery('wallet', (ctx) => walletHandler(ctx));
+  bot.callbackQuery('wallet_add', (ctx) => generateWalletHandler(ctx));
+  bot.callbackQuery('wallet_import', (ctx) => walletImportPromptHandler(ctx));
+  bot.callbackQuery('wallet_seed', (ctx) => walletSeedPromptHandler(ctx));
+  bot.callbackQuery('wallet_status', (ctx) => walletStatusHandler(ctx));
+  bot.callbackQuery('wallet_refresh', (ctx) => walletRefreshHandler(ctx));
+  bot.callbackQuery('wallet_withdraw', (ctx) => withdrawStartHandler(ctx));
+  bot.callbackQuery('wallet_disconnect', (ctx) => walletDisconnectHandler(ctx));
+  bot.callbackQuery('discover', (ctx) => discoverHandler(ctx));
+  bot.callbackQuery('trade', (ctx) => tradeHandler(ctx));
+  bot.callbackQuery('buy_sol', (ctx) => tradeBuyStartHandler(ctx));
+  bot.callbackQuery('sell_token', (ctx) => tradeSellStartHandler(ctx));
+  bot.callbackQuery('positions', (ctx) => positionsHandler(ctx));
+  bot.callbackQuery('sniper', (ctx) => sniperHandler(ctx));
+  bot.callbackQuery('sniper_activate', (ctx) => sniperActivateHandler(ctx));
+  bot.callbackQuery('sniper_pause', (ctx) => sniperPauseHandler(ctx));
+  bot.callbackQuery('sniper_buyamount', (ctx) => sniperSettingPromptHandler('setting_position_size')(ctx));
+  bot.callbackQuery('sniper_devhold', (ctx) => sniperSettingPromptHandler('setting_dev_hold')(ctx));
+  bot.callbackQuery('sniper_slippage', (ctx) => sniperSettingPromptHandler('setting_slippage')(ctx));
+  bot.callbackQuery('sniper_priority', (ctx) => sniperSettingPromptHandler('setting_priority')(ctx));
+  bot.callbackQuery('sniper_takeprofit', (ctx) => sniperSettingPromptHandler('setting_take_profit')(ctx));
+  bot.callbackQuery('sniper_stoploss', (ctx) => sniperSettingPromptHandler('setting_stop_loss')(ctx));
+  bot.callbackQuery('sniper_antirug', (ctx) => sniperAntiRugHandler(ctx));
+  bot.callbackQuery('copytrade', (ctx) => copyTradeHandler(ctx));
+  bot.callbackQuery('copytrade_start', (ctx) => copyTradeStartHandler(ctx));
+  bot.callbackQuery('copytrade_add', (ctx) => copyTradeConfigurePromptHandler(ctx));
+  bot.callbackQuery('help', (ctx) => helpHandler(ctx));
+  bot.callbackQuery('cancel', (ctx) => cancelHandler(ctx));
+  bot.callbackQuery('withdraw_confirm', (ctx) => withdrawConfirmHandler(ctx));
+  bot.callbackQuery('confirm_buy', (ctx) => buyConfirmHandler(ctx));
+  bot.callbackQuery(/^buy_(.+)$/, (ctx) => buyFromSearchHandler(ctx, ctx.match[1]));
+  bot.callbackQuery(/^sell_(.+)$/, (ctx) => sellFromSearchHandler(ctx, ctx.match[1]));
 
   // ------------------------------------------------------------------
   // Free-text messages: routed by the current conversation state.
   // ------------------------------------------------------------------
   bot.on('message:text', async (ctx) => {
     if (ctx.chat.type !== 'private') return; // group chatter is ignored
-    const state = ctx.session?.state ?? 'idle';
+    const state = ctx.session?.state ?? IDLE_STATE;
     switch (state) {
-      case 'awaiting_buy_token':
-        return buyTokenHandler(ctx);
-      case 'awaiting_buy_amount':
-        return buyAmountTextHandler(ctx);
-      case 'awaiting_sell_pct':
-        return sellPctTextHandler(ctx);
-      case 'awaiting_withdraw_address':
-        return withdrawAddressHandler(ctx);
-      case 'awaiting_withdraw_amount':
-        return withdrawAmountHandler(ctx);
-      case 'awaiting_import_secret':
+      case 'importing_wallet':
         return walletImportHandleSecretHandler(ctx);
-      case 'awaiting_custom_slippage':
-        return settingsSlippageCustomHandler(ctx);
-      case 'awaiting_custom_buy_amount':
-        return settingsBuyAmountCustomHandler(ctx);
+      case 'withdrawing_address':
+        return withdrawAddressHandler(ctx);
+      case 'withdrawing_amount':
+        return withdrawAmountHandler(ctx);
+      case 'searching_token':
+        return searchTokenHandler(ctx);
+      case 'buying_token':
+        return buyFromTradeHandler(ctx);
+      case 'selling_token':
+        return sellFromTradeHandler(ctx);
+      case 'confirming_sell':
+        return sellAmountHandler(ctx);
+      case 'setting_position_size':
+      case 'setting_dev_hold':
+      case 'setting_slippage':
+      case 'setting_priority':
+      case 'setting_take_profit':
+      case 'setting_stop_loss':
+        return sniperSettingValueHandler(ctx);
+      case 'copytrade_add':
+        return copyTradeAddHandler(ctx);
       default: {
         if (ctx.message.text.startsWith('/')) return;
         await resetToIdle(ctx);
-        await ctx.reply('Tap a button below to navigate.', {
-          parse_mode: 'HTML',
-          reply_markup: mainMenuKeyboard(),
-        });
+        await dashboard(ctx);
       }
     }
   });
 
   return bot;
 }
+
+export { InputFile };

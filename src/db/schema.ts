@@ -14,6 +14,8 @@ import {
   timestamp,
   primaryKey,
   index,
+  doublePrecision,
+  boolean,
 } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
@@ -44,13 +46,14 @@ export const wallets = pgTable('wallets', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   chatId: bigint('chat_id', { mode: 'number' })
     .notNull()
-    .unique()
     .references(() => users.chatId, { onDelete: 'cascade' }),
-  address: text('address').notNull().unique(),
+  address: text('address').notNull(),
   encryptedSecret: jsonb('encrypted_secret').notNull(),
   derivation: text('derivation').notNull(), // 'mnemonic' | 'private_key'
   /** Per-user ordinal of this wallet (1 = first wallet). */
   walletNumber: integer('wallet_number').notNull().default(1),
+  /** 'generated' | 'imported' | 'seed_imported' */
+  type: text('type').notNull().default('generated'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -99,18 +102,19 @@ export const deposits = pgTable(
   (t) => [index('idx_deposits_chat_created').on(t.chatId, t.createdAt)],
 );
 
-/** Last observed on-chain balance per (user, mint) for deposit detection. */
+/** Last observed on-chain balance per (user, wallet address, mint). */
 export const balanceSnapshots = pgTable(
   'balance_snapshots',
   {
     chatId: bigint('chat_id', { mode: 'number' })
       .notNull()
       .references(() => users.chatId, { onDelete: 'cascade' }),
+    address: text('address').notNull().default(''),
     mint: text('mint').notNull(),
     amount: text('amount').notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.chatId, t.mint] })],
+  (t) => [primaryKey({ columns: [t.chatId, t.address, t.mint] })],
 );
 
 /** Tracks which SQL migrations have been applied. */
@@ -134,3 +138,49 @@ export const adminEvents = pgTable(
     index('idx_admin_events_type').on(t.eventType),
   ],
 );
+
+/** AI Sniper settings per user (exact screenshot defaults). */
+export const sniperSettings = pgTable('sniper_settings', {
+  chatId: bigint('chat_id', { mode: 'number' })
+    .primaryKey()
+    .references(() => users.chatId, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('STANDBY'),
+  positionSize: doublePrecision('position_size').notNull().default(10),
+  maxDevHold: doublePrecision('max_dev_hold').notNull().default(20),
+  slippage: doublePrecision('slippage').notNull().default(10),
+  priorityFee: doublePrecision('priority_fee').notNull().default(0.001),
+  takeProfit: doublePrecision('take_profit').notNull().default(100),
+  stopLoss: doublePrecision('stop_loss').notNull().default(30),
+  antiRug: boolean('anti_rug').notNull().default(true),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Open/closed token positions (opened by real swaps). */
+export const positions = pgTable(
+  'positions',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    chatId: bigint('chat_id', { mode: 'number' })
+      .notNull()
+      .references(() => users.chatId, { onDelete: 'cascade' }),
+    tokenAddress: text('token_address').notNull(),
+    tokenSymbol: text('token_symbol').notNull(),
+    tokenName: text('token_name').notNull(),
+    amountSol: doublePrecision('amount_sol').notNull(),
+    entryPriceUsd: doublePrecision('entry_price_usd').notNull(),
+    status: text('status').notNull().default('open'),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  (t) => [index('idx_positions_chat').on(t.chatId, t.status)],
+);
+
+/** Copy-trade configuration per user. */
+export const copyTrade = pgTable('copy_trade', {
+  chatId: bigint('chat_id', { mode: 'number' })
+    .primaryKey()
+    .references(() => users.chatId, { onDelete: 'cascade' }),
+  targetWallet: text('target_wallet'),
+  status: text('status').notNull().default('STANDBY'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});

@@ -1,106 +1,130 @@
-/** Inline keyboard builders for the Telegram layer. */
+/**
+ * Inline keyboards — matching the screenshot layouts exactly.
+ */
 import { InlineKeyboard } from 'grammy';
 
-export function mainMenuKeyboard(): InlineKeyboard {
+/** Dashboard: Portfolio | Refresh / Discover To... | Trade / Positions | Sniper / Copy Trade | Help */
+export function dashboardKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text('📈 Portfolio', 'portfolio:show')
-    .text('🪙 Buy', 'buy:start')
+    .text('Portfolio', 'wallet')
+    .text('Refresh', 'refresh')
     .row()
-    .text('💸 Sell', 'sell:start')
-    .text('👛 Wallet', 'wallet:show')
+    .text('Discover To...', 'discover')
+    .text('Trade', 'trade')
     .row()
-    .text('📥 Deposit', 'deposit:show')
-    .text('📤 Withdraw', 'withdraw:start')
+    .text('Positions', 'positions')
+    .text('Sniper', 'sniper')
     .row()
-    .text('⚙️ Settings', 'settings:show')
-    .text('❓ Help', 'help:show');
+    .text('Copy Trade', 'copytrade')
+    .text('Help', 'help');
 }
 
-export function backToMenuKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text('« Back to menu', 'menu:main');
+/** Portfolio management. */
+export function walletKeyboard(hasWallets: boolean): InlineKeyboard {
+  const kb = new InlineKeyboard()
+    .text('Generate Wallet', 'wallet_add')
+    .row()
+    .text('Import Private Key', 'wallet_import')
+    .text('Import Seed Phrase', 'wallet_seed')
+    .row();
+  if (hasWallets) {
+    kb.text('Check Status', 'wallet_status').text('Refresh Balance', 'wallet_refresh').row();
+    kb.text('Withdraw', 'wallet_withdraw').text('Disconnect', 'wallet_disconnect').row();
+  }
+  return kb.text('Back to Terminal', 'back_dashboard');
 }
 
-export function confirmCancelKeyboard(confirmData: string): InlineKeyboard {
+/** AI Sniper screen. */
+export function sniperKeyboard(isActive: boolean): InlineKeyboard {
   return new InlineKeyboard()
-    .text('✅ Confirm', confirmData)
-    .text('❌ Cancel', 'cancel');
+    .text(isActive ? 'Pause Sniper' : 'Activate Sniper', isActive ? 'sniper_pause' : 'sniper_activate')
+    .row()
+    .text('Buy Amount', 'sniper_buyamount')
+    .text('Dev Hold', 'sniper_devhold')
+    .row()
+    .text('Slippage', 'sniper_slippage')
+    .text('Priority', 'sniper_priority')
+    .row()
+    .text('Take Profit', 'sniper_takeprofit')
+    .text('Stop Loss', 'sniper_stoploss')
+    .row()
+    .text('Anti-Rug: ON', 'sniper_antirug')
+    .row()
+    .text('Back to Terminal', 'back_dashboard');
 }
 
-export function walletMenuKeyboard(): InlineKeyboard {
+/** Single "Dashboard" button (wallet-required screens). */
+export function backToDashboardKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Dashboard', 'back_dashboard');
+}
+
+/** Discover Tokens screen. */
+export function discoverKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Dashboard', 'back_dashboard');
+}
+
+/** Wallet-required screens (Trade/Sniper/CopyTrade). */
+export function walletRequiredKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Dashboard', 'back_dashboard');
+}
+
+/** Positions screen. */
+export function positionsKeyboard(hasPositions: boolean): InlineKeyboard {
+  if (!hasPositions) {
+    return new InlineKeyboard().text('Open Trade Terminal', 'trade').text('Back to Terminal', 'back_dashboard');
+  }
+  return new InlineKeyboard().text('Refresh Positions', 'positions').row().text('Back to Terminal', 'back_dashboard');
+}
+
+/** Help screen. */
+export function helpKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Back to Terminal', 'back_dashboard');
+}
+
+/** Back to Sniper (after settings). */
+export function backToSniperKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Back to Sniper', 'sniper');
+}
+
+/** Cancel button. */
+export function cancelButton(): InlineKeyboard {
+  return new InlineKeyboard().text('Cancel', 'cancel');
+}
+
+/** Withdraw confirm. */
+export function confirmCancelKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Confirm', 'withdraw_confirm').text('Cancel', 'cancel');
+}
+
+/** Token search result. */
+export function tokenSearchKeyboard(tokenAddress: string): InlineKeyboard {
   return new InlineKeyboard()
-    .text('🔄 Refresh', 'wallet:refresh')
-    .text('📥 Deposit', 'deposit:show')
+    .text('Buy', `buy_${tokenAddress}`)
+    .text('Sell', `sell_${tokenAddress}`)
     .row()
-    .text('🔑 Export key', 'wallet:export')
-    .text('🆕 New wallet', 'wallet:create')
-    .row()
-    .text('« Back to menu', 'menu:main');
+    .text('New Search', 'discover')
+    .text('Back to Terminal', 'back_dashboard');
 }
 
-export function buyAmountKeyboard(): InlineKeyboard {
+/** Trade screen. */
+export function tradeKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text('0.1 SOL', 'buy:amount:0.1')
-    .text('0.5 SOL', 'buy:amount:0.5')
+    .text('Buy', 'buy_sol')
+    .text('Sell', 'sell_token')
     .row()
-    .text('1 SOL', 'buy:amount:1')
-    .text('❌ Cancel', 'cancel');
+    .text('Back to Terminal', 'back_dashboard');
 }
 
-export function sellPercentKeyboard(): InlineKeyboard {
+/** Copy trade screen. */
+export function copyTradeKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text('25%', 'sell:pct:25')
-    .text('50%', 'sell:pct:50')
+    .text('Start Copy Trade', 'copytrade_start')
+    .text('Configure Target', 'copytrade_add')
     .row()
-    .text('75%', 'sell:pct:75')
-    .text('100%', 'sell:pct:100')
-    .row()
-    .text('❌ Cancel', 'cancel');
+    .text('Back to Terminal', 'back_dashboard');
 }
 
-export function settingsMenuKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('🎚 Slippage', 'settings:slippage')
-    .text('💰 Buy amount', 'settings:buyamount')
-    .row()
-    .text('⛽ Priority fee', 'settings:priofee')
-    .text('« Back to menu', 'menu:main');
-}
-
-export function slippageKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('0.5%', 'settings:slippage:50')
-    .text('1%', 'settings:slippage:100')
-    .row()
-    .text('2%', 'settings:slippage:200')
-    .text('5%', 'settings:slippage:500')
-    .row()
-    .text('✍️ Custom…', 'settings:slippage:custom')
-    .text('« Back', 'settings:show');
-}
-
-export function buyAmountSettingsKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('0.05 SOL', 'settings:buyamount:0.05')
-    .text('0.1 SOL', 'settings:buyamount:0.1')
-    .row()
-    .text('0.5 SOL', 'settings:buyamount:0.5')
-    .text('1 SOL', 'settings:buyamount:1')
-    .row()
-    .text('✍️ Custom…', 'settings:buyamount:custom')
-    .text('« Back', 'settings:show');
-}
-
-export function priorityFeeKeyboard(): InlineKeyboard {
-  return new InlineKeyboard()
-    .text('None', 'settings:priofee:0')
-    .text('0.0001 SOL', 'settings:priofee:100000')
-    .row()
-    .text('0.001 SOL', 'settings:priofee:1000000')
-    .text('0.005 SOL', 'settings:priofee:5000000')
-    .row()
-    .text('« Back', 'settings:show');
-}
-
-export function withdrawAssetsKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text('◎ SOL', 'withdraw:pick:SOL').text('« Back to menu', 'menu:main');
+/** CONFIRM BUY inline (dynamic). */
+export function confirmBuyKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('Confirm Buy', 'confirm_buy').text('Cancel', 'cancel');
 }

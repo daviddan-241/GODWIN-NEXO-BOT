@@ -40,6 +40,7 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
       encryptedSecret: { test: true },
       derivation: 'mnemonic',
       walletNumber: 1,
+      type: 'generated',
     });
   });
 
@@ -51,7 +52,7 @@ describeDb('deposit monitor (real DB + fake RPC)', () => {
   it('bootstrap poll records no deposits and creates the baseline', async () => {
     solana.balances.set(walletAddress, 1_000_000_000); // 1 SOL
     await monitor.pollOnce();
-    const snap = await repos.getSnapshots(chatId);
+    const snap = await repos.getSnapshots(chatId, walletAddress);
     expect(snap[WSOL_MINT]).toBe('1000000000');
     expect(await repos.getDeposits(chatId)).toHaveLength(0);
     expect(adminTransport.messages).toHaveLength(0);

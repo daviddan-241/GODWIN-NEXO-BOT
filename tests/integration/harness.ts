@@ -20,6 +20,8 @@ import { createBot, type BotInstance, type BotServices } from '../../src/telegra
 import type { AppConfig } from '../../src/config/env';
 import { makeConfig, TEST_DB_URL } from '../helpers/test-env';
 import { MockBotApiServer } from '../helpers/mock-bot-api';
+import { CoinGeckoMarket } from '../../src/market/coingecko';
+import { FakeTokenSearch } from '../helpers/fakes';
 import {
   FakeSolanaClient,
   FakePriceProvider,
@@ -36,6 +38,7 @@ export interface TestApp {
   solana: FakeSolanaClient;
   prices: FakePriceProvider;
   swaps: FakeSwapProvider;
+  tokens: FakeTokenSearch;
   admin: FakeAdminTransport;
   notifier: AdminNotifier;
   config: AppConfig;
@@ -64,6 +67,10 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
   const prices = new FakePriceProvider();
   const swaps = new FakeSwapProvider();
   const admin = new FakeAdminTransport();
+  const market = new CoinGeckoMarket('https://coingecko.invalid', logger, async () => {
+    throw new Error('no network in tests');
+  });
+  const tokens = new FakeTokenSearch();
   const notifier = new AdminNotifier(admin, config.ADMIN_IDS, logger, true, {
     record: (type, traceId, payload) => repos.insertAdminEvent(type, traceId, payload),
   });
@@ -80,6 +87,8 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     solana,
     prices,
     swaps,
+    market,
+    tokens,
     wallets,
     trading,
     portfolio,
@@ -88,6 +97,9 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     sessions,
     sendToUser: async () => {
       throw new Error('not wired');
+    },
+    sendLogo: async () => {
+      // No photo in tests (the mock records the attempt only if sent).
     },
   };
 
@@ -108,6 +120,7 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     solana,
     prices,
     swaps,
+    tokens,
     admin,
     notifier,
     config,
