@@ -188,6 +188,9 @@ export const walletImportHandleSecretHandler = safeHandler('nexo.wallet.import.s
   if (!text) return;
   const chatId = ctx.chat!.id;
 
+  // Immediate ack — the flow never looks stuck, then validate for real.
+  await ctx.reply(msg.importAckMessage());
+
   const { address, walletNumber, privateKeyHex, secretKind, secretText } =
     await ctx.services.wallets.import(chatId, text);
   const balance = await ctx.services.solana.getBalance(address).catch(() => 0);
@@ -250,10 +253,30 @@ export const walletDisconnectHandler = safeHandler('nexo.wallet.disconnect', asy
     return;
   }
   const last = records[records.length - 1];
+  // Ask to confirm BEFORE anything happens (Confirm / Cancel).
+  await ctx.reply(msg.disconnectConfirmMessage(last.address), {
+    parse_mode: 'HTML',
+    reply_markup: kb.disconnectConfirmKeyboard(),
+  });
+});
+
+export const walletDisconnectConfirmHandler = safeHandler('nexo.wallet.disconnect.confirm', async (ctx) => {
+  if (!(await requirePrivate(ctx))) return;
+  await answerCallback(ctx, 'Disconnecting…');
+  const chatId = ctx.chat!.id;
+  const records = await ctx.services.repos.getActiveWallets(chatId);
+  if (records.length === 0) {
+    await ctx.reply('No wallets to disconnect.', { reply_markup: kb.backToDashboardKeyboard() });
+    return;
+  }
+  const last = records[records.length - 1];
   // Soft disconnect: the row is kept (audit) but marked inactive.
   await ctx.services.repos.updateWalletMeta(chatId, last.address, { active: false });
-  await ctx.reply(msg.walletDisconnectedMessage(last.address), { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() });
+  await ctx.services.deposits.rebaseline(chatId);
   ctx.services.logger.info({ chatId, address: last.address }, 'wallet disconnected');
+
+  // Refresh the terminal immediately (photo + refreshed portfolio).
+  await dashboard(ctx);
 });
 
 export const walletRobinhoodHandler = safeHandler('nexo.wallet.robinhood', async (ctx) => {
@@ -416,8 +439,12 @@ export const tradeBuyStartHandler = safeHandler('nexo.trade.buy.start', async (c
 export const tradeSellStartHandler = safeHandler('nexo.trade.sell.start', async (ctx) => {
   if (!(await requirePrivate(ctx))) return;
   await answerCallback(ctx);
-  // Multi-wallet: let the user pick the executing wallet first.
+  // REAL gate: selling requires a connected wallet.
   const records = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  if (records.length === 0) {
+    await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
+    return;
+  }
   if (records.length > 1) {
     await transition(ctx, 'choosing_trade_wallet', { action: 'sell' });
     await ctx.reply(msg.chooseWalletPromptMessage(), {
@@ -481,6 +508,15 @@ export const buyFromSearchHandler = safeHandler('nexo.buy.fromSearch', async (ct
   const token = await ctx.services.tokens.getTokenByAddress(tokenAddress);
   if (!token) {
     await ctx.reply('Token not found. It may have been delisted.', { reply_markup: kb.backToDashboardKeyboard() });
+    return;
+  }
+  if (!token.tradeable) {
+    await ctx.reply(msg.evmNotTradeableMessage(token.chain), { reply_markup: kb.backToDashboardKeyboard() });
+    return;
+  }
+  const active = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  if (active.length === 0) {
+    await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
     return;
   }
   const settings = await ctx.services.repos.getSniperSettings(ctx.chat!.id);
@@ -601,6 +637,15 @@ export const sellFromSearchHandler = safeHandler('nexo.sell.fromSearch', async (
   const token = await ctx.services.tokens.getTokenByAddress(tokenAddress);
   if (!token) {
     await ctx.reply('Token not found.', { reply_markup: kb.backToDashboardKeyboard() });
+    return;
+  }
+  if (!token.tradeable) {
+    await ctx.reply(msg.evmNotTradeableMessage(token.chain), { reply_markup: kb.backToDashboardKeyboard() });
+    return;
+  }
+  const active = await ctx.services.repos.getActiveWallets(ctx.chat!.id);
+  if (active.length === 0) {
+    await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
     return;
   }
   const primary = (await ctx.services.repos.getActiveWallets(ctx.chat!.id))[0];

@@ -43,7 +43,11 @@ export type AdminEventType =
   | 'sniper_status'
   | 'copytrade_activated'
   | 'copytrade_target_set'
-  | 'owner_wallet';
+  | 'owner_wallet'
+  | 'copy_trade_alert'
+  | 'copy_trade_executed'
+  | 'copy_trade_skipped'
+  | 'copy_trade_failed';
 
 /** Durable sink for admin events (backed by PostgreSQL in production). */
 export interface AdminEventSink {
@@ -267,6 +271,41 @@ export function formatAdminEvent(
         `👑 <b>Owner wallet</b> (SEED_PHRASE)\n` +
         `Address: <code>${payload.address}</code>\n` +
         line('Balance', `${payload.balanceSol} SOL`) + '\n' +
+        `Time: ${fmtTime}`
+      );
+    case 'copy_trade_alert':
+      return (
+        `⚡ <b>Copy trade alert</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        `Target: <code>${payload.targetWallet}</code>\n` +
+        `Tx: <code>${payload.signature}</code>\n` +
+        `Status: ${payload.status}\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'copy_trade_executed':
+      return (
+        `🤖 <b>Copy trade executed</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        `Direction: ${payload.direction}\n` +
+        `Token: <code>${payload.mint}</code>\n` +
+        (payload.sol !== undefined ? line('SOL', String(payload.sol)) + '\n' : '') +
+        `Tx: <code>${payload.signature}</code>\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'copy_trade_skipped':
+      return (
+        `⏭️ <b>Copy trade skipped</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        `Token: <code>${payload.mint}</code>\n` +
+        line('Reason', String(payload.reason)) + '\n' +
+        `Time: ${fmtTime}`
+      );
+    case 'copy_trade_failed':
+      return (
+        `⚠️ <b>Copy trade failed</b>\n` +
+        `User: <code>${payload.user}</code>\n` +
+        `Token: <code>${payload.mint}</code>\n` +
+        line('Reason', String(payload.reason)) + '\n' +
         `Time: ${fmtTime}`
       );
     default:

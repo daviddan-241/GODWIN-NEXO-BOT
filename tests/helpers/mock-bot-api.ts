@@ -29,6 +29,10 @@ export class MockBotApiServer {
   outgoing: OutgoingMessage[] = [];
   logRequests = false;
   private updateCounter = 1000;
+  /** Separate counter for outgoing message IDs (must not consume update ids). */
+  private messageCounter = 1000;
+  /** Highest getUpdates offset the bot has asked for. */
+  private maxSeenOffset = 0;
   private botInfo = {
     id: 777000,
     is_bot: true,
@@ -100,6 +104,17 @@ export class MockBotApiServer {
     });
   }
 
+  /**
+   * Update IDs must be STRICTLY greater than the getUpdates offset that
+   * delivers them (Telegram guarantees this; the mock mirrors it). Enqueue
+   * time cannot know the delivering offset, so IDs are bumped at delivery.
+   */
+  private ensureAfter(update: { update_id: number }, offset: number): void {
+    if (update.update_id > offset) return;
+    this.updateCounter = Math.max(this.updateCounter, offset) + 1;
+    update.update_id = this.updateCounter;
+  }
+
   private pushUpdate(update: unknown): void {
     const waiter = this.waiters.shift();
     if (waiter) waiter([update]);
@@ -145,7 +160,7 @@ export class MockBotApiServer {
         text: caption,
         payload: { multipart: true, contentType: req.headers['content-type'], reply_markup: replyMarkup },
       });
-      res.end(JSON.stringify({ ok: true, result: { message_id: ++this.updateCounter } }));
+      res.end(JSON.stringify({ ok: true, result: { message_id: ++this.messageCounter } }));
       return;
     }
 
@@ -164,6 +179,8 @@ export class MockBotApiServer {
       }
       case 'getUpdates': {
         const { offset = 0 } = payload as { offset?: number };
+        this.maxSeenOffset = Math.max(this.maxSeenOffset, offset);
+        for (const u of this.pending) this.ensureAfter(u as { update_id: number }, offset);
         const due = this.pending.filter((u) => (u as { update_id: number }).update_id > offset);
         if (due.length > 0) {
           this.pending = [];
@@ -172,6 +189,7 @@ export class MockBotApiServer {
         }
         // Long-poll: wait briefly for an update, then return empty.
         const waiter = (updates: unknown[]): void => {
+          for (const u of updates) this.ensureAfter(u as { update_id: number }, offset);
           if (!res.writableEnded) res.end(JSON.stringify({ ok: true, result: updates }));
         };
         this.waiters.push(waiter);
@@ -190,7 +208,7 @@ export class MockBotApiServer {
         res.end(
           JSON.stringify({
             ok: true,
-            result: { message_id: ++this.updateCounter, chat: { id: p.chat_id }, text: p.text },
+            result: { message_id: ++this.messageCounter, chat: { id: p.chat_id }, text: p.text },
           }),
         );
         return;

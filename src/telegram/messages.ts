@@ -324,3 +324,15 @@ export const robinhoodUnavailableMessage = () =>
   `🟢 Connect Robinhood\n\nRobinhood wallet connection is not available for Solana self-custody yet.\n\nUse 🟣 Add SOL Wallet or 🔑 Import to connect a Solana wallet.`;
 
 export const chooseWalletPromptMessage = () => `Which connected wallet should execute this trade?`;
+
+/** Disconnect confirmation (Confirm / Cancel per requirement). */
+export function disconnectConfirmMessage(address: string): string {
+  return `🔌 Disconnect Wallet?\n\n${copy(address)}\n\nThe wallet is removed from the terminal (keys stay encrypted in the database).\n\nConfirm to disconnect:`;
+}
+
+/** Quick ack so the import flow never looks stuck. */
+export const importAckMessage = () => `🔐 Validating and encrypting your wallet…`;
+
+/** EVM tokens cannot be traded by this Solana terminal. */
+export const evmNotTradeableMessage = (chain: string) =>
+  `⚠️ ${esc(chain)} tokens can't be traded here — this terminal trades Solana only.\n\nFind a Solana token with Discover Tokens to buy or sell.`;

@@ -24,6 +24,7 @@ export interface ResolverConfig {
   raydiumPriceUrl: string;
   birdeyeUrl: string;
   jupiterTokenListUrl: string;
+  pumpfunUrl: string;
 }
 
 export interface TokenInfo {
@@ -45,6 +46,8 @@ export interface TokenInfo {
   riskScore: number;
   riskFlags: string[];
   flagDetails: string[];
+  /** Whether this token can be traded by the bot (Solana mints only). */
+  tradeable: boolean;
 }
 
 export interface TokenSearchProvider {
@@ -62,6 +65,39 @@ function isBase58Address(input: string): boolean {
   } catch {
     return false;
   }
+}
+
+export interface ExtractedQuery {
+  kind: 'evm' | 'solana' | 'text';
+  value: string;
+}
+
+/**
+ * Pulls a real identifier out of messy user input:
+ *   "0x6982508145454922925dDbE47a25d4ec3d2311933 (ETH CA)" -> EVM address
+ *   "2UEnrcHM56X7B8Hrqoizvr7CSAXLzZ9ZdM98NyBZmpump&"      -> Solana mint
+ *   "BONK", "pepe"                                          -> symbol/name
+ */
+export function extractIdentifier(input: string): ExtractedQuery {
+  const raw = input.trim();
+
+  const evm = raw.match(/0x[0-9a-fA-F]{40}/);
+  if (evm) return { kind: 'evm', value: evm[0] };
+
+  const base58 = raw.match(/[1-9A-HJ-NP-Za-km-z]{43,44}/);
+  if (base58) return { kind: 'solana', value: base58[0] };
+
+  let text = raw;
+  // Strip trailing "(...)" annotations like "(ETH CA)", "(SOL CA)".
+  text = text.replace(/\s*\([^)]*\)\s*$/, '');
+  // Strip junk characters that are not symbol/name chars.
+  text = text.replace(/[^a-zA-Z0-9 .$_-]/g, '').trim();
+  if (/\b(eth|ethereum|evm)\b/i.test(text) && text.length > 4) {
+    // a symbol that looks EVM-ish: normalize to the symbol part
+    const symbol = text.split(/\s+/)[0];
+    if (symbol) return { kind: 'text', value: symbol };
+  }
+  return { kind: 'text', value: text };
 }
 
 /** Deterministic risk scoring from real market data (0-1000, higher = safer). */
@@ -147,31 +183,59 @@ export class MultiProviderTokenResolver implements TokenSearchProvider {
   // Address path: find the mint's identity + market data from any source.
   // ------------------------------------------------------------------
   private async resolveByAddress(address: string): Promise<TokenInfo | null> {
-    const [jupList, dexToken, raydiumPrice, birdeyePrice, geckoToken] = await Promise.all([
+    if (/^0x[0-9a-fA-F]{40}$/.test(address)) return this.resolveEvmByAddress(address);
+
+    const [jupList, dexToken, raydiumPrice, birdeyePrice, geckoToken, pump] = await Promise.all([
       this.fetchJupiterList().catch(() => null),
       this.dexTokenByAddress(address),
       this.raydiumPrice(address),
       this.birdeyePrice(address),
       this.geckoTokenByAddress(address),
+      this.pumpFunCoin(address),
     ]);
 
     const fromList = jupList?.tokens.find(
       (t: { address?: string; mint?: string }) => (t.address ?? t.mint) === address,
     );
 
-    const name = dexToken?.name ?? fromList?.name ?? geckoToken?.name ?? 'Unknown';
-    const symbol = dexToken?.symbol ?? fromList?.symbol ?? raydiumPrice?.symbol ?? geckoToken?.symbol ?? '???';
-    const priceUsd = dexToken?.priceUsd ?? raydiumPrice?.price ?? birdeyePrice?.price ?? geckoToken?.priceUsd ?? 0;
-    const dex = dexToken?.dex ?? 'unknown';
+    const name = dexToken?.name ?? pump?.name ?? fromList?.name ?? geckoToken?.name ?? 'Unknown';
+    const symbol = dexToken?.symbol ?? pump?.symbol ?? fromList?.symbol ?? raydiumPrice?.symbol ?? geckoToken?.symbol ?? '???';
+    const priceUsd = dexToken?.priceUsd ?? pump?.priceUsd ?? raydiumPrice?.price ?? birdeyePrice?.price ?? geckoToken?.priceUsd ?? 0;
+    const dex = dexToken?.dex ?? (pump ? 'pumpfun' : 'unknown');
 
-    if (!fromList && !dexToken && !raydiumPrice && !birdeyePrice && !geckoToken) return null;
+    if (!fromList && !dexToken && !pump && !raydiumPrice && !birdeyePrice && !geckoToken) return null;
 
     return this.assembleToken({
       address,
+      chain: 'solana',
       name,
       symbol,
       dex,
       priceUsd,
+      liquidity: dexToken?.liquidity ?? 0,
+      volume24h: dexToken?.volume24h ?? 0,
+      mcap: dexToken?.mcap ?? pump?.mcap ?? geckoToken?.mcap ?? 0,
+      change24h: dexToken?.change24h ?? geckoToken?.change24h ?? 0,
+      buys24h: dexToken?.buys24h ?? 0,
+      sells24h: dexToken?.sells24h ?? 0,
+      pairUrl: dexToken?.pairUrl ?? '',
+    });
+  }
+
+  /** Ethereum tokens (EVM CAs): real data, but not tradeable by this bot. */
+  private async resolveEvmByAddress(address: string): Promise<TokenInfo | null> {
+    const [dexToken, geckoToken] = await Promise.all([
+      this.dexTokenByAddressEvm(address),
+      this.geckoEvmToken(address),
+    ]);
+    if (!dexToken && !geckoToken) return null;
+    return this.assembleToken({
+      address,
+      chain: 'ethereum',
+      name: dexToken?.name ?? geckoToken?.name ?? 'Unknown',
+      symbol: dexToken?.symbol ?? geckoToken?.symbol ?? '???',
+      dex: dexToken?.dex ?? 'ethereum',
+      priceUsd: dexToken?.priceUsd ?? geckoToken?.priceUsd ?? 0,
       liquidity: dexToken?.liquidity ?? 0,
       volume24h: dexToken?.volume24h ?? 0,
       mcap: dexToken?.mcap ?? geckoToken?.mcap ?? 0,
@@ -182,31 +246,151 @@ export class MultiProviderTokenResolver implements TokenSearchProvider {
     });
   }
 
+  private async dexTokenByAddressEvm(address: string): Promise<Partial<TokenInfo> & { address?: string } | null> {
+    try {
+      const data = (await this.fetchJson(
+        `${this.config.dexscreenerUrl}/tokens/v1/ethereum/${encodeURIComponent(address)}`,
+      )) as Array<Record<string, unknown>>;
+      const pair = Array.isArray(data) ? data[0] : null;
+      if (!pair) return null;
+      return this.parseDexPair(pair);
+    } catch {
+      return null;
+    }
+  }
+
+  private async geckoEvmToken(address: string): Promise<{ name?: string; symbol?: string; priceUsd?: number; mcap?: number; change24h?: number } | null> {
+    try {
+      const data = (await this.fetchJson(
+        `${this.config.coingeckoUrl}/coins/ethereum/contract/${encodeURIComponent(address)}`,
+      )) as {
+        name?: string;
+        symbol?: string;
+        market_data?: {
+          current_price?: { usd?: number };
+          market_cap?: { usd?: number };
+          price_change_percentage_24h?: number;
+        };
+      };
+      if (!data?.name) return null;
+      return {
+        name: data.name,
+        symbol: data.symbol?.toUpperCase(),
+        priceUsd: data.market_data?.current_price?.usd,
+        mcap: data.market_data?.market_cap?.usd,
+        change24h: data.market_data?.price_change_percentage_24h,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** pump.fun metadata (real public API) for mints DexScreener misses. */
+  private async pumpFunCoin(mint: string): Promise<{ name?: string; symbol?: string; priceUsd?: number; mcap?: number } | null> {
+    try {
+      const data = (await this.fetchJson(
+        `${this.config.pumpfunUrl}/coins/${encodeURIComponent(mint)}`,
+      )) as {
+        name?: string;
+        symbol?: string;
+        usd_market_cap?: number;
+        market_cap?: number;
+        total_supply?: number;
+      };
+      if (!data?.name && !data?.symbol) return null;
+      let priceUsd: number | undefined;
+      if (typeof data.usd_market_cap === 'number' && typeof data.total_supply === 'number' && data.total_supply > 0) {
+        priceUsd = data.usd_market_cap / data.total_supply;
+      }
+      return {
+        name: data.name,
+        symbol: data.symbol,
+        priceUsd,
+        mcap: data.usd_market_cap,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   // ------------------------------------------------------------------
   // Symbol/name path: try every provider's search until one hits.
   // ------------------------------------------------------------------
   private async resolveByQuery(query: string): Promise<TokenInfo | null> {
+    const extracted = extractIdentifier(query);
+
+    // Direct identifier: address (Solana or EVM).
+    if (extracted.kind === 'solana') {
+      return this.resolveByAddress(extracted.value);
+    }
+    if (extracted.kind === 'evm') {
+      return this.resolveEvmByAddress(extracted.value);
+    }
+
+    const q = extracted.value.toLowerCase();
+    if (!q) return null;
+
     // 1) Jupiter strict list (fast, authoritative metadata)
     const jupList = await this.fetchJupiterList().catch(() => null);
-    const q = query.toLowerCase();
     const fromList = jupList?.tokens?.find(
       (t: { symbol?: string; name?: string }) =>
         t.symbol?.toLowerCase() === q || t.name?.toLowerCase() === q,
     );
     const listAddress = fromList?.address ?? fromList?.mint ?? null;
 
-    // 2) DexScreener search (market data + names)
-    const dexSearch = await this.dexSearch(query);
+    // 2) DexScreener search — Solana pairs first, Ethereum as fallback.
+    const dexSearch = await this.dexSearch(q);
 
     // 3) CoinGecko search
-    const geckoSearch = await this.geckoSearch(query);
+    const geckoSearch = await this.geckoSearch(q);
 
     const address = dexSearch?.address ?? listAddress ?? geckoSearch?.address ?? null;
-    if (!address) return null;
+    if (address) {
+      const token = await this.resolveByAddress(address);
+      if (token) return token;
+    }
 
-    const token = await this.resolveByAddress(address);
-    if (token) return token;
+    // 4) No Solana result: try EVM (symbols that only exist on Ethereum).
+    const dexEvm = await this.dexSearchEvm(q);
+    if (dexEvm?.address) {
+      const evmToken = await this.resolveEvmByAddress(dexEvm.address);
+      if (evmToken) return evmToken;
+    }
+    const geckoEvmAddr = await this.geckoSearchEvm(q);
+    if (geckoEvmAddr) {
+      const evmToken = await this.resolveEvmByAddress(geckoEvmAddr);
+      if (evmToken) return evmToken;
+    }
     return null;
+  }
+
+  private async dexSearchEvm(query: string): Promise<Partial<TokenInfo> & { address?: string } | null> {
+    try {
+      const data = (await this.fetchJson(
+        `${this.config.dexscreenerUrl}/latest/dex/search?q=${encodeURIComponent(query)}`,
+      )) as { pairs?: Array<Record<string, unknown>> };
+      const pair = data.pairs?.find((p) => p.chainId === 'ethereum');
+      if (!pair) return null;
+      return this.parseDexPair(pair);
+    } catch {
+      return null;
+    }
+  }
+
+  private async geckoSearchEvm(query: string): Promise<string | null> {
+    try {
+      const data = (await this.fetchJson(
+        `${this.config.coingeckoUrl}/search?query=${encodeURIComponent(query)}`,
+      )) as { coins?: Array<{ id: string; symbol: string }> };
+      const coin = data.coins?.find((c) => c.symbol?.toLowerCase() === query.toLowerCase());
+      if (!coin) return null;
+      const detail = (await this.fetchJson(
+        `${this.config.coingeckoUrl}/coins/${encodeURIComponent(coin.id)}`,
+      )) as { platforms?: Record<string, string> };
+      return detail.platforms?.ethereum ?? null;
+    } catch {
+      return null;
+    }
   }
 
   // ------------------------------------------------------------------
@@ -363,6 +547,7 @@ export class MultiProviderTokenResolver implements TokenSearchProvider {
   }
 
   private assembleToken(partial: Partial<TokenInfo> & { address: string }): TokenInfo {
+    const chain = partial.chain ?? 'solana';
     const risk = deriveRisk({
       liquidity: partial.liquidity ?? 0,
       volume24h: partial.volume24h ?? 0,
@@ -374,7 +559,7 @@ export class MultiProviderTokenResolver implements TokenSearchProvider {
       name: partial.name ?? 'Unknown',
       symbol: partial.symbol ?? '???',
       address: partial.address,
-      chain: 'solana',
+      chain,
       dex: partial.dex ?? 'unknown',
       priceUsd: partial.priceUsd ?? 0,
       mcap: partial.mcap ?? 0,
@@ -388,6 +573,7 @@ export class MultiProviderTokenResolver implements TokenSearchProvider {
       riskScore: risk.riskScore,
       riskFlags: risk.riskFlags,
       flagDetails: risk.flagDetails,
+      tradeable: chain === 'solana',
     };
   }
 
@@ -421,7 +607,7 @@ export function formatTokenInfo(token: TokenInfo): string {
       `• Liquidity: ${esc(liquidity)}\n` +
       `• Volume 24h: ${esc(volume)}\n` +
       `• DEX: ${esc(token.dex)}\n` +
-      `• Blockchain: Solana\n\n` +
+      `• Blockchain: ${token.chain === 'ethereum' ? 'Ethereum (EVM)' : 'Solana'}\n\n` +
       `🔧 <b>Technical Information</b>\n` +
       `• Contract Address:\n${esc(token.address)}\n` +
       `• <a href="${solscan}">🔗 View on Solscan</a>\n` +

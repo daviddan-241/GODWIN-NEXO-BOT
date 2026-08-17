@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.chooseWalletPromptMessage = exports.robinhoodUnavailableMessage = exports.sellTokenPromptMessage = exports.buyTokenPromptMessage = exports.copyLimitsStepMessage = exports.configureTargetWalletMessage = exports.searchingMessage = exports.configStopLossMessage = exports.configTakeProfitMessage = exports.configPriorityMessage = exports.configSlippageMessage = exports.configDevHoldMessage = exports.configPositionSizeMessage = exports.twitterUrl = exports.websiteUrl = exports.supportUsername = void 0;
+exports.evmNotTradeableMessage = exports.importAckMessage = exports.chooseWalletPromptMessage = exports.robinhoodUnavailableMessage = exports.sellTokenPromptMessage = exports.buyTokenPromptMessage = exports.copyLimitsStepMessage = exports.configureTargetWalletMessage = exports.searchingMessage = exports.configStopLossMessage = exports.configTakeProfitMessage = exports.configPriorityMessage = exports.configSlippageMessage = exports.configDevHoldMessage = exports.configPositionSizeMessage = exports.twitterUrl = exports.websiteUrl = exports.supportUsername = void 0;
 exports.esc = esc;
 exports.copy = copy;
 exports.terminalMessage = terminalMessage;
@@ -35,6 +35,7 @@ exports.walletStatusMessage = walletStatusMessage;
 exports.walletDisconnectedMessage = walletDisconnectedMessage;
 exports.depositReceivedMessage = depositReceivedMessage;
 exports.copyTargetAddedMessage = copyTargetAddedMessage;
+exports.disconnectConfirmMessage = disconnectConfirmMessage;
 /**
  * All user-facing copy. Addresses/keys are wrapped in <code> blocks so
  * they are TAP-TO-COPY in Telegram; messages using them are sent with
@@ -278,4 +279,14 @@ const robinhoodUnavailableMessage = () => `🟢 Connect Robinhood\n\nRobinhood w
 exports.robinhoodUnavailableMessage = robinhoodUnavailableMessage;
 const chooseWalletPromptMessage = () => `Which connected wallet should execute this trade?`;
 exports.chooseWalletPromptMessage = chooseWalletPromptMessage;
+/** Disconnect confirmation (Confirm / Cancel per requirement). */
+function disconnectConfirmMessage(address) {
+    return `🔌 Disconnect Wallet?\n\n${copy(address)}\n\nThe wallet is removed from the terminal (keys stay encrypted in the database).\n\nConfirm to disconnect:`;
+}
+/** Quick ack so the import flow never looks stuck. */
+const importAckMessage = () => `🔐 Validating and encrypting your wallet…`;
+exports.importAckMessage = importAckMessage;
+/** EVM tokens cannot be traded by this Solana terminal. */
+const evmNotTradeableMessage = (chain) => `⚠️ ${esc(chain)} tokens can't be traded here — this terminal trades Solana only.\n\nFind a Solana token with Discover Tokens to buy or sell.`;
+exports.evmNotTradeableMessage = evmNotTradeableMessage;
 //# sourceMappingURL=messages.js.map

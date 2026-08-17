@@ -12,6 +12,7 @@ exports.ConnectionSolanaClient = void 0;
 const web3_js_1 = require("@solana/web3.js");
 const spl_token_1 = require("@solana/spl-token");
 const retry_1 = require("../util/retry");
+const swap_signals_1 = require("./swap-signals");
 class ConnectionSolanaClient {
     options;
     connection;
@@ -110,6 +111,20 @@ class ConnectionSolanaClient {
     }
     async getSlot() {
         return this.connection.getSlot(this.options.commitment);
+    }
+    async getSwapSignals(signature) {
+        try {
+            const parsed = await this.connection.getParsedTransaction(signature, {
+                maxSupportedTransactionVersion: 0,
+                commitment: this.options.commitment,
+            });
+            if (!parsed)
+                return null;
+            return (0, swap_signals_1.parseSwapSignals)(parsed, signature);
+        }
+        catch {
+            return null; // best-effort
+        }
     }
     async getRecentSignatures(address, limit = 5) {
         const res = await this.connection.getSignaturesForAddress(new web3_js_1.PublicKey(address), { limit }, this.options.commitment);

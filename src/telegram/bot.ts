@@ -16,6 +16,7 @@ import type { WalletService } from '../wallet/service';
 import type { TradingExecutor } from '../trading/executor';
 import type { PortfolioService } from '../portfolio/service';
 import type { DepositMonitor } from '../deposits/monitor';
+import type { CopyTradeMonitor } from '../copytrade/monitor';
 import type { AdminNotifier } from '../admin/notifier';
 import type { SessionData, SessionStore } from './session';
 import { RateLimiter } from './rate-limit';
@@ -34,6 +35,7 @@ import {
   walletStatusHandler,
   walletRefreshHandler,
   walletDisconnectHandler,
+  walletDisconnectConfirmHandler,
   walletRobinhoodHandler,
   tradeWalletPickHandler,
   withdrawStartHandler,
@@ -84,6 +86,7 @@ export interface BotServices {
   trading: TradingExecutor;
   portfolio: PortfolioService;
   deposits: DepositMonitor;
+  copytrade: CopyTradeMonitor;
   notifier: AdminNotifier;
   sessions: SessionStore;
   /** Sends a message to an arbitrary chat (wired to bot.api after construction). */
@@ -188,6 +191,7 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   bot.callbackQuery('wallet_refresh', (ctx) => walletRefreshHandler(ctx));
   bot.callbackQuery('wallet_withdraw', (ctx) => withdrawStartHandler(ctx));
   bot.callbackQuery('wallet_disconnect', (ctx) => walletDisconnectHandler(ctx));
+  bot.callbackQuery('wallet_disconnect_confirm', (ctx) => walletDisconnectConfirmHandler(ctx));
   bot.callbackQuery('wallet_robinhood', (ctx) => walletRobinhoodHandler(ctx));
   bot.callbackQuery('discover', (ctx) => discoverHandler(ctx));
   bot.callbackQuery('trade', (ctx) => tradeHandler(ctx));

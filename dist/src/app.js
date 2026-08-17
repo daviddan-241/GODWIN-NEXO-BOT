@@ -24,6 +24,7 @@ const service_1 = require("./wallet/service");
 const executor_1 = require("./trading/executor");
 const service_2 = require("./portfolio/service");
 const monitor_1 = require("./deposits/monitor");
+const monitor_2 = require("./copytrade/monitor");
 const transport_1 = require("./admin/transport");
 const notifier_1 = require("./admin/notifier");
 const session_1 = require("./telegram/session");
@@ -48,6 +49,7 @@ function createApp(config, logger, database) {
         raydiumPriceUrl: `${config.RAYDIUM_API_URL}/mint/price`,
         birdeyeUrl: config.BIRDEYE_API_URL,
         jupiterTokenListUrl: config.JUPITER_TOKEN_LIST_URL,
+        pumpfunUrl: config.PUMPFUN_API_URL,
     }, logger);
     const transport = new transport_1.TelegramAdminTransport(config);
     const notifier = new notifier_1.AdminNotifier(transport, config.ADMIN_IDS, logger, true, 
@@ -57,6 +59,7 @@ function createApp(config, logger, database) {
     const sessions = new session_1.DbSessionStore(repos);
     const deposits = new monitor_1.DepositMonitor(config, repos, solana, notifier, logger);
     const trading = new executor_1.TradingExecutor(config, repos, solana, swaps, prices, wallets, deposits, logger);
+    const copytrade = new monitor_2.CopyTradeMonitor(config, repos, solana, trading, notifier, logger);
     const portfolio = new service_2.PortfolioService(repos, solana, prices, logger);
     const services = {
         config,
@@ -71,6 +74,7 @@ function createApp(config, logger, database) {
         trading,
         portfolio,
         deposits,
+        copytrade,
         notifier,
         sessions,
         sendToUser: async () => {
@@ -100,6 +104,8 @@ function createApp(config, logger, database) {
     services.sendToUser = (chatId, text) => bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
     // USER deposit notification (DEPOSIT RECEIVED) via the real Bot API.
     deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol) => services.sendToUser(chatId, (0, messages_1.depositReceivedMessage)(address, amountSol, newBalanceSol)).then(() => undefined);
+    // USER copy-trade alerts via the real Bot API.
+    copytrade.onUserAlert = (chatId, text) => services.sendToUser(chatId, text).then(() => undefined);
     // Bot readiness is established once at startup (getMe above); the health
     // endpoint reports the cached result instead of re-calling the Bot API on
     // every poll.
@@ -206,8 +212,9 @@ function createApp(config, logger, database) {
                 watcherTimer = setInterval(() => void reconcile(), 30_000);
                 watcherTimer.unref?.();
             }
-            // 4. Deposit monitor.
+            // 4. Deposit monitor + copy-trade monitor.
             deposits.start();
+            copytrade.start();
             // 5. Telegram polling (long-running, resilient).
             //    A 409 conflict (another instance polling the same bot token, or a
             //    leftover webhook) must NOT kill the service: retry with backoff
@@ -260,6 +267,7 @@ function createApp(config, logger, database) {
                 clearInterval(watcherTimer);
             watcher?.stop();
             deposits.stop();
+            copytrade.stop();
             try {
                 await bot.stop();
             }

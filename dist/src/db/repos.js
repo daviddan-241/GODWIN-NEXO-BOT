@@ -244,6 +244,8 @@ class Repos {
             maxDailySol: 10,
             slippage: 10,
             tokenFilter: null,
+            dailyUsedSol: 0,
+            dailyResetDate: '',
         };
     }
     async updateCopyTrade(chatId, patch) {
@@ -260,6 +262,8 @@ class Repos {
             maxDailySol: merged.maxDailySol,
             slippage: merged.slippage,
             tokenFilter: merged.tokenFilter,
+            dailyUsedSol: merged.dailyUsedSol,
+            dailyResetDate: merged.dailyResetDate,
         })
             .onConflictDoUpdate({
             target: schema_1.copyTrade.chatId,
@@ -271,9 +275,33 @@ class Repos {
                 maxDailySol: merged.maxDailySol,
                 slippage: merged.slippage,
                 tokenFilter: merged.tokenFilter,
+                dailyUsedSol: merged.dailyUsedSol,
+                dailyResetDate: merged.dailyResetDate,
                 updatedAt: new Date(),
             },
         });
+    }
+    async allActiveCopyTrades() {
+        const rows = await this.db
+            .select()
+            .from(schema_1.copyTrade)
+            .where((0, drizzle_orm_1.sql) `${schema_1.copyTrade.status} = 'ACTIVE' AND ${schema_1.copyTrade.targetWallet} IS NOT NULL`);
+        return rows;
+    }
+    // ---- copy-trade signals ------------------------------------------------
+    async hasCopytradeSignal(chatId, signature) {
+        const rows = await this.db
+            .select({ s: schema_1.copytradeSignals.signature })
+            .from(schema_1.copytradeSignals)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.copytradeSignals.chatId, chatId), (0, drizzle_orm_1.eq)(schema_1.copytradeSignals.signature, signature)))
+            .limit(1);
+        return rows.length > 0;
+    }
+    async insertCopytradeSignal(chatId, signature, status) {
+        await this.db
+            .insert(schema_1.copytradeSignals)
+            .values({ chatId, signature, status })
+            .onConflictDoNothing({ target: [schema_1.copytradeSignals.chatId, schema_1.copytradeSignals.signature] });
     }
     // ---- sessions --------------------------------------------------------
     async getSession(chatId) {

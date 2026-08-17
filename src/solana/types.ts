@@ -46,6 +46,11 @@ export interface SolanaClient {
   /** Current slot (deposit reporting). */
   getSlot(): Promise<number>;
   /**
+   * Real swap signals for a transaction signature (token balance diffs of
+   * the fee payer). Used by the copy-trade monitor to mirror real trades.
+   */
+  getSwapSignals(signature: string): Promise<import('./swap-signals').ParsedSwapResult | null>;
+  /**
    * Recent transaction signatures for an address (best-effort; used by the
    * deposit monitor to enrich deposit events with tx info).
    */

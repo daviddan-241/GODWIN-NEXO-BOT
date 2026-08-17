@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.broadcastHandler = exports.statsHandler = exports.copyTradeLimitsValueHandler = exports.copyTradeLimitsPromptHandler = exports.copyTradeModeHandler = exports.copyTradeAddHandler = exports.copyTradeConfigurePromptHandler = exports.copyTradeStartHandler = exports.copyTradeHandler = exports.sniperSettingValueHandler = exports.sniperAntiRugHandler = exports.sniperPauseHandler = exports.sniperActivateHandler = exports.sniperHandler = exports.positionsHandler = exports.sellAmountHandler = exports.sellFromTradeHandler = exports.sellFromSearchHandler = exports.buyConfirmHandler = exports.buyFromTradeHandler = exports.buyFromSearchHandler = exports.searchTokenHandler = exports.tradeWalletPickHandler = exports.tradeSellStartHandler = exports.tradeBuyStartHandler = exports.tradeHandler = exports.discoverHandler = exports.withdrawConfirmHandler = exports.withdrawAmountHandler = exports.withdrawAddressHandler = exports.withdrawStartHandler = exports.walletRobinhoodHandler = exports.walletDisconnectHandler = exports.walletRefreshHandler = exports.walletStatusHandler = exports.walletImportHandleSecretHandler = exports.walletSeedPromptHandler = exports.walletImportPromptHandler = exports.generateWalletHandler = exports.walletHandler = exports.cancelHandler = exports.helpHandler = exports.refreshHandler = exports.dashboardHandler = exports.startHandler = void 0;
+exports.broadcastHandler = exports.statsHandler = exports.copyTradeLimitsValueHandler = exports.copyTradeLimitsPromptHandler = exports.copyTradeModeHandler = exports.copyTradeAddHandler = exports.copyTradeConfigurePromptHandler = exports.copyTradeStartHandler = exports.copyTradeHandler = exports.sniperSettingValueHandler = exports.sniperAntiRugHandler = exports.sniperPauseHandler = exports.sniperActivateHandler = exports.sniperHandler = exports.positionsHandler = exports.sellAmountHandler = exports.sellFromTradeHandler = exports.sellFromSearchHandler = exports.buyConfirmHandler = exports.buyFromTradeHandler = exports.buyFromSearchHandler = exports.searchTokenHandler = exports.tradeWalletPickHandler = exports.tradeSellStartHandler = exports.tradeBuyStartHandler = exports.tradeHandler = exports.discoverHandler = exports.withdrawConfirmHandler = exports.withdrawAmountHandler = exports.withdrawAddressHandler = exports.withdrawStartHandler = exports.walletRobinhoodHandler = exports.walletDisconnectConfirmHandler = exports.walletDisconnectHandler = exports.walletRefreshHandler = exports.walletStatusHandler = exports.walletImportHandleSecretHandler = exports.walletSeedPromptHandler = exports.walletImportPromptHandler = exports.generateWalletHandler = exports.walletHandler = exports.cancelHandler = exports.helpHandler = exports.refreshHandler = exports.dashboardHandler = exports.startHandler = void 0;
 exports.dashboard = dashboard;
 exports.sniperSettingPromptHandler = sniperSettingPromptHandler;
 /**
@@ -188,6 +188,8 @@ exports.walletImportHandleSecretHandler = (0, common_1.safeHandler)('nexo.wallet
     if (!text)
         return;
     const chatId = ctx.chat.id;
+    // Immediate ack — the flow never looks stuck, then validate for real.
+    await ctx.reply(msg.importAckMessage());
     const { address, walletNumber, privateKeyHex, secretKind, secretText } = await ctx.services.wallets.import(chatId, text);
     const balance = await ctx.services.solana.getBalance(address).catch(() => 0);
     await ctx.services.deposits.rebaseline(chatId);
@@ -245,10 +247,29 @@ exports.walletDisconnectHandler = (0, common_1.safeHandler)('nexo.wallet.disconn
         return;
     }
     const last = records[records.length - 1];
+    // Ask to confirm BEFORE anything happens (Confirm / Cancel).
+    await ctx.reply(msg.disconnectConfirmMessage(last.address), {
+        parse_mode: 'HTML',
+        reply_markup: kb.disconnectConfirmKeyboard(),
+    });
+});
+exports.walletDisconnectConfirmHandler = (0, common_1.safeHandler)('nexo.wallet.disconnect.confirm', async (ctx) => {
+    if (!(await (0, common_1.requirePrivate)(ctx)))
+        return;
+    await (0, common_1.answerCallback)(ctx, 'Disconnecting…');
+    const chatId = ctx.chat.id;
+    const records = await ctx.services.repos.getActiveWallets(chatId);
+    if (records.length === 0) {
+        await ctx.reply('No wallets to disconnect.', { reply_markup: kb.backToDashboardKeyboard() });
+        return;
+    }
+    const last = records[records.length - 1];
     // Soft disconnect: the row is kept (audit) but marked inactive.
     await ctx.services.repos.updateWalletMeta(chatId, last.address, { active: false });
-    await ctx.reply(msg.walletDisconnectedMessage(last.address), { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() });
+    await ctx.services.deposits.rebaseline(chatId);
     ctx.services.logger.info({ chatId, address: last.address }, 'wallet disconnected');
+    // Refresh the terminal immediately (photo + refreshed portfolio).
+    await dashboard(ctx);
 });
 exports.walletRobinhoodHandler = (0, common_1.safeHandler)('nexo.wallet.robinhood', async (ctx) => {
     if (!(await (0, common_1.requirePrivate)(ctx)))
@@ -408,8 +429,12 @@ exports.tradeSellStartHandler = (0, common_1.safeHandler)('nexo.trade.sell.start
     if (!(await (0, common_1.requirePrivate)(ctx)))
         return;
     await (0, common_1.answerCallback)(ctx);
-    // Multi-wallet: let the user pick the executing wallet first.
+    // REAL gate: selling requires a connected wallet.
     const records = await ctx.services.repos.getActiveWallets(ctx.chat.id);
+    if (records.length === 0) {
+        await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
+        return;
+    }
     if (records.length > 1) {
         await (0, common_1.transition)(ctx, 'choosing_trade_wallet', { action: 'sell' });
         await ctx.reply(msg.chooseWalletPromptMessage(), {
@@ -471,6 +496,15 @@ exports.buyFromSearchHandler = (0, common_1.safeHandler)('nexo.buy.fromSearch', 
     const token = await ctx.services.tokens.getTokenByAddress(tokenAddress);
     if (!token) {
         await ctx.reply('Token not found. It may have been delisted.', { reply_markup: kb.backToDashboardKeyboard() });
+        return;
+    }
+    if (!token.tradeable) {
+        await ctx.reply(msg.evmNotTradeableMessage(token.chain), { reply_markup: kb.backToDashboardKeyboard() });
+        return;
+    }
+    const active = await ctx.services.repos.getActiveWallets(ctx.chat.id);
+    if (active.length === 0) {
+        await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
         return;
     }
     const settings = await ctx.services.repos.getSniperSettings(ctx.chat.id);
@@ -570,6 +604,15 @@ exports.sellFromSearchHandler = (0, common_1.safeHandler)('nexo.sell.fromSearch'
     const token = await ctx.services.tokens.getTokenByAddress(tokenAddress);
     if (!token) {
         await ctx.reply('Token not found.', { reply_markup: kb.backToDashboardKeyboard() });
+        return;
+    }
+    if (!token.tradeable) {
+        await ctx.reply(msg.evmNotTradeableMessage(token.chain), { reply_markup: kb.backToDashboardKeyboard() });
+        return;
+    }
+    const active = await ctx.services.repos.getActiveWallets(ctx.chat.id);
+    if (active.length === 0) {
+        await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
         return;
     }
     const primary = (await ctx.services.repos.getActiveWallets(ctx.chat.id))[0];

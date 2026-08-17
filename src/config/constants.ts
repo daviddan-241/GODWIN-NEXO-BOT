@@ -6,7 +6,7 @@
 
 /** Product name — overridable via the APP_NAME environment variable. */
 export const APP_NAME = process.env.APP_NAME?.trim() || 'Nexo Snipe';
-export const APP_VERSION = '1.3.0';
+export const APP_VERSION = '1.4.0';
 
 /** Wrapped-SOL mint (native SOL on SPL token rails). */
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';

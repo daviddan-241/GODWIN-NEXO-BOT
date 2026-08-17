@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.copyTrade = exports.positions = exports.sniperSettings = exports.adminEvents = exports.schemaMigrations = exports.balanceSnapshots = exports.deposits = exports.trades = exports.botSessions = exports.wallets = exports.userSettings = exports.users = void 0;
+exports.copytradeSignals = exports.copyTrade = exports.positions = exports.sniperSettings = exports.adminEvents = exports.schemaMigrations = exports.balanceSnapshots = exports.deposits = exports.trades = exports.botSessions = exports.wallets = exports.userSettings = exports.users = void 0;
 /**
  * Database schema (PostgreSQL via drizzle-orm).
  *
@@ -149,6 +149,17 @@ exports.copyTrade = (0, pg_core_1.pgTable)('copy_trade', {
     maxDailySol: (0, pg_core_1.doublePrecision)('max_daily_sol').notNull().default(10),
     slippage: (0, pg_core_1.doublePrecision)('slippage').notNull().default(10),
     tokenFilter: (0, pg_core_1.text)('token_filter'),
+    dailyUsedSol: (0, pg_core_1.doublePrecision)('daily_used_sol').notNull().default(0),
+    dailyResetDate: (0, pg_core_1.text)('daily_reset_date').notNull().default(''),
     updatedAt: (0, pg_core_1.timestamp)('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+/** Copy-trade signal dedupe (one row per target transaction). */
+exports.copytradeSignals = (0, pg_core_1.pgTable)('copytrade_signals', {
+    chatId: (0, pg_core_1.bigint)('chat_id', { mode: 'number' })
+        .notNull()
+        .references(() => exports.users.chatId, { onDelete: 'cascade' }),
+    signature: (0, pg_core_1.text)('signature').notNull(),
+    status: (0, pg_core_1.text)('status').notNull(),
+    createdAt: (0, pg_core_1.timestamp)('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [(0, pg_core_1.primaryKey)({ columns: [t.chatId, t.signature] })]);
 //# sourceMappingURL=schema.js.map

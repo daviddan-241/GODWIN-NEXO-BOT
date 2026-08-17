@@ -98,6 +98,11 @@ export function confirmCancelKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('✅ Confirm', 'withdraw_confirm').text('❌ Cancel', 'cancel');
 }
 
+/** Disconnect confirm. */
+export function disconnectConfirmKeyboard(): InlineKeyboard {
+  return new InlineKeyboard().text('✅ Confirm', 'wallet_disconnect_confirm').text('❌ Cancel', 'cancel');
+}
+
 /** Token search result. */
 export function tokenSearchKeyboard(tokenAddress: string): InlineKeyboard {
   return new InlineKeyboard()

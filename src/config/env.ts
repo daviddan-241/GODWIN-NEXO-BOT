@@ -45,6 +45,10 @@ const EnvSchema = z
     RAYDIUM_API_URL: z.string().url().default('https://api-v3.raydium.io'),
     BIRDEYE_API_URL: z.string().url().default('https://public-api.birdeye.com'),
     JUPITER_TOKEN_LIST_URL: z.string().url().default('https://token.jup.ag/strict'),
+    PUMPFUN_API_URL: z.string().url().default('https://frontend-api.pump.fun'),
+
+    /** Copy-trade monitor poll interval (ms). */
+    COPYTRADE_POLL_INTERVAL_MS: z.coerce.number().int().min(5_000).default(15_000),
 
     /** Optional WebSocket endpoint for account-change driven deposit checks. */
     SOLANA_WS_URL: z.string().url('SOLANA_WS_URL must be a valid URL').optional(),

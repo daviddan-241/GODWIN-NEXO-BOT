@@ -17,6 +17,7 @@ import {
 } from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { retryWithBackoff } from '../util/retry';
+import { parseSwapSignals } from './swap-signals';
 import type { SolanaClient, TokenAccountInfo, MintInfo, AccountExistsInfo } from './types';
 
 
@@ -147,6 +148,19 @@ export class ConnectionSolanaClient implements SolanaClient {
 
   async getSlot(): Promise<number> {
     return this.connection.getSlot(this.options.commitment);
+  }
+
+  async getSwapSignals(signature: string): Promise<import('./swap-signals').ParsedSwapResult | null> {
+    try {
+      const parsed = await this.connection.getParsedTransaction(signature, {
+        maxSupportedTransactionVersion: 0,
+        commitment: this.options.commitment as Finality,
+      });
+      if (!parsed) return null;
+      return parseSwapSignals(parsed, signature);
+    } catch {
+      return null; // best-effort
+    }
   }
 
   async getRecentSignatures(

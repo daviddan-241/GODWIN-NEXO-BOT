@@ -32,17 +32,27 @@ or any Node host — no dependency on any external platform.
   AES-256-GCM encrypted at rest (ENCRYPTION_KEY); mnemonics shown once;
   the user's seed-phrase message is deleted from the chat after import;
   the DB never sees plaintext and logs never contain secrets.
-- **Discover Tokens** — real DexScreener search by name/symbol/contract with
-  price, market cap, liquidity, 24h volume/change/txns and risk analysis.
-- **Trade** — CONFIRM BUY / CONFIRM SELL with the sniper position size +
-  slippage, then a **real Jupiter swap** signed locally and broadcast; open
-  positions are tracked with live PnL; trade ledger in PostgreSQL.
+- **Discover Tokens** — multi-API search (DexScreener + Jupiter list +
+  Raydium + Birdeye + CoinGecko + pump.fun) that tolerates messy input
+  (paste "0x… (ETH CA)", "…pump", junk suffixes). Solana tokens show the
+  full risk card; EVM (Ethereum) tokens resolve with real data and are
+  marked display-only (the terminal trades Solana only).
+- **Trade** — real wallet gate on BOTH buy and sell (Wallet Required /
+  balance gate), CONFIRM BUY / CONFIRM SELL with live quote + slippage,
+  then a **real Jupiter swap** signed locally and broadcast; positions are
+  tracked with live PnL; trade ledger in PostgreSQL. Disconnect asks to
+  Confirm/Cancel and refreshes the terminal.
 - **AI Sniper** — exact configuration screens (position size, dev hold,
   slippage, priority fee, take profit, stop loss, anti-rug) with
   activate/pause status persisted per user.
-- **Copy Trade** — explicit configuration before following: target wallet,
-  max SOL per trade, max daily exposure, slippage, token filter, Buy+Buy
-  / Buy Only mode, enable/disable (all persisted).
+- **Copy Trade (REAL)** — explicit configuration before following (target
+  wallet, max SOL/trade, max daily exposure, slippage, token filter,
+  Buy Only/Buy+Sell). When ACTIVE the monitor polls the target wallet's
+  REAL transactions: every tx produces a COPY TRADE ALERT (real
+  Success/Failed status + Solscan link), and real swap signals (token
+  balance diffs — any DEX: Jupiter/Raydium/pump.fun) are mirrored as real
+  trades through the same executor, deduped in PostgreSQL and capped by
+  the configured limits.
 - **Deposit monitoring** — polls on-chain balances (SOL + SPL) and
   notifies the user (DEPOSIT RECEIVED) and admins (wallet, sender, amount,
   token, tx signature, slot, timestamp). Notifications fire only after the

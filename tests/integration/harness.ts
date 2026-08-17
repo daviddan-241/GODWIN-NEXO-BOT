@@ -14,6 +14,7 @@ import { WalletService } from '../../src/wallet/service';
 import { TradingExecutor } from '../../src/trading/executor';
 import { PortfolioService } from '../../src/portfolio/service';
 import { DepositMonitor } from '../../src/deposits/monitor';
+import { CopyTradeMonitor } from '../../src/copytrade/monitor';
 import { AdminNotifier } from '../../src/admin/notifier';
 import { DbSessionStore } from '../../src/telegram/session';
 import { createBot, type BotInstance, type BotServices } from '../../src/telegram/bot';
@@ -78,6 +79,7 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
   const sessions = new DbSessionStore(repos);
   const deposits = new DepositMonitor(config, repos, solana, notifier, logger);
   const trading = new TradingExecutor(config, repos, solana, swaps, prices, wallets, deposits, logger);
+  const copytrade = new CopyTradeMonitor(config, repos, solana, trading, notifier, logger);
   const portfolio = new PortfolioService(repos, solana, prices, logger);
 
   const services: BotServices = {
@@ -93,6 +95,7 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     trading,
     portfolio,
     deposits,
+    copytrade,
     notifier,
     sessions,
     sendToUser: async () => {
@@ -120,6 +123,8 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
   const bot = createBot(services, 'test-bot-token', mockBot.url);
   services.sendToUser = (chatId, text) =>
     bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+  copytrade.onUserAlert = (chatId, text) =>
+    bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } }).then(() => undefined);
 
   // grammY start() runs getMe + long polling; await init() so the bot is
   // verified before tests begin, then leave polling running.
@@ -140,6 +145,7 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     config,
     cleanup: async () => {
       deposits.stop();
+      copytrade.stop();
       try {
         await bot.stop();
       } catch {

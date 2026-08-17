@@ -16,6 +16,7 @@ import {
   sniperSettings,
   positions,
   copyTrade,
+  copytradeSignals,
 } from './schema';
 
 export interface UserRecord {
@@ -52,6 +53,8 @@ export interface CopyTradeRecord {
   maxDailySol: number;
   slippage: number;
   tokenFilter: string | null;
+  dailyUsedSol: number;
+  dailyResetDate: string;
 }
 
 export interface SniperSettingsRecord {
@@ -387,6 +390,8 @@ export class Repos {
       maxDailySol: 10,
       slippage: 10,
       tokenFilter: null,
+      dailyUsedSol: 0,
+      dailyResetDate: '',
     };
   }
 
@@ -407,6 +412,8 @@ export class Repos {
         maxDailySol: merged.maxDailySol,
         slippage: merged.slippage,
         tokenFilter: merged.tokenFilter,
+        dailyUsedSol: merged.dailyUsedSol,
+        dailyResetDate: merged.dailyResetDate,
       })
       .onConflictDoUpdate({
         target: copyTrade.chatId,
@@ -418,9 +425,36 @@ export class Repos {
           maxDailySol: merged.maxDailySol,
           slippage: merged.slippage,
           tokenFilter: merged.tokenFilter,
+          dailyUsedSol: merged.dailyUsedSol,
+          dailyResetDate: merged.dailyResetDate,
           updatedAt: new Date(),
         },
       });
+  }
+
+  async allActiveCopyTrades(): Promise<CopyTradeRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(copyTrade)
+      .where(sql`${copyTrade.status} = 'ACTIVE' AND ${copyTrade.targetWallet} IS NOT NULL`);
+    return rows as CopyTradeRecord[];
+  }
+
+  // ---- copy-trade signals ------------------------------------------------
+  async hasCopytradeSignal(chatId: number, signature: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ s: copytradeSignals.signature })
+      .from(copytradeSignals)
+      .where(and(eq(copytradeSignals.chatId, chatId), eq(copytradeSignals.signature, signature)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async insertCopytradeSignal(chatId: number, signature: string, status: string): Promise<void> {
+    await this.db
+      .insert(copytradeSignals)
+      .values({ chatId, signature, status })
+      .onConflictDoNothing({ target: [copytradeSignals.chatId, copytradeSignals.signature] });
   }
 
   // ---- sessions --------------------------------------------------------

@@ -23,10 +23,16 @@ export class FakeSolanaClient implements SolanaClient {
   senders = new Map<string, string>();
   /** Fake slot counter. */
   slot = 200_000_000;
+  /** Preconfigured swap-signal results per signature. */
+  swapSignals = new Map<string, import('../../src/solana/swap-signals').ParsedSwapResult | null>();
 
   async getSlot(): Promise<number> {
     this.slot += 400;
     return this.slot;
+  }
+
+  async getSwapSignals(signature: string): Promise<import('../../src/solana/swap-signals').ParsedSwapResult | null> {
+    return this.swapSignals.get(signature) ?? null;
   }
 
   async getHealth(): Promise<string> {
@@ -181,6 +187,7 @@ export class FakeTokenSearch implements TokenSearchProvider {
       riskScore: 810,
       riskFlags: [],
       flagDetails: [],
+      tradeable: true,
       ...overrides,
     };
   }

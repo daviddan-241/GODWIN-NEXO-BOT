@@ -190,5 +190,21 @@ export const copyTrade = pgTable('copy_trade', {
   maxDailySol: doublePrecision('max_daily_sol').notNull().default(10),
   slippage: doublePrecision('slippage').notNull().default(10),
   tokenFilter: text('token_filter'),
+  dailyUsedSol: doublePrecision('daily_used_sol').notNull().default(0),
+  dailyResetDate: text('daily_reset_date').notNull().default(''),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Copy-trade signal dedupe (one row per target transaction). */
+export const copytradeSignals = pgTable(
+  'copytrade_signals',
+  {
+    chatId: bigint('chat_id', { mode: 'number' })
+      .notNull()
+      .references(() => users.chatId, { onDelete: 'cascade' }),
+    signature: text('signature').notNull(),
+    status: text('status').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chatId, t.signature] })],
+);

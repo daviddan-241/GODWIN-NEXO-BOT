@@ -11,6 +11,7 @@ exports.helpKeyboard = helpKeyboard;
 exports.backToSniperKeyboard = backToSniperKeyboard;
 exports.cancelButton = cancelButton;
 exports.confirmCancelKeyboard = confirmCancelKeyboard;
+exports.disconnectConfirmKeyboard = disconnectConfirmKeyboard;
 exports.tokenSearchKeyboard = tokenSearchKeyboard;
 exports.tradeKeyboard = tradeKeyboard;
 exports.copyTradeKeyboard = copyTradeKeyboard;
@@ -103,6 +104,10 @@ function cancelButton() {
 /** Withdraw confirm. */
 function confirmCancelKeyboard() {
     return new grammy_1.InlineKeyboard().text('✅ Confirm', 'withdraw_confirm').text('❌ Cancel', 'cancel');
+}
+/** Disconnect confirm. */
+function disconnectConfirmKeyboard() {
+    return new grammy_1.InlineKeyboard().text('✅ Confirm', 'wallet_disconnect_confirm').text('❌ Cancel', 'cancel');
 }
 /** Token search result. */
 function tokenSearchKeyboard(tokenAddress) {

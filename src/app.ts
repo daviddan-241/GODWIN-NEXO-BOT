@@ -18,6 +18,7 @@ import { WalletService } from './wallet/service';
 import { TradingExecutor } from './trading/executor';
 import { PortfolioService } from './portfolio/service';
 import { DepositMonitor } from './deposits/monitor';
+import { CopyTradeMonitor } from './copytrade/monitor';
 import { TelegramAdminTransport } from './admin/transport';
 import { AdminNotifier } from './admin/notifier';
 import { DbSessionStore } from './telegram/session';
@@ -52,6 +53,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
       raydiumPriceUrl: `${config.RAYDIUM_API_URL}/mint/price`,
       birdeyeUrl: config.BIRDEYE_API_URL,
       jupiterTokenListUrl: config.JUPITER_TOKEN_LIST_URL,
+      pumpfunUrl: config.PUMPFUN_API_URL,
     },
     logger,
   );
@@ -68,6 +70,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   const sessions = new DbSessionStore(repos);
   const deposits = new DepositMonitor(config, repos, solana, notifier, logger);
   const trading = new TradingExecutor(config, repos, solana, swaps, prices, wallets, deposits, logger);
+  const copytrade = new CopyTradeMonitor(config, repos, solana, trading, notifier, logger);
   const portfolio = new PortfolioService(repos, solana, prices, logger);
 
   const services: BotServices = {
@@ -83,6 +86,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
     trading,
     portfolio,
     deposits,
+    copytrade,
     notifier,
     sessions,
     sendToUser: async () => {
@@ -114,6 +118,10 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   // USER deposit notification (DEPOSIT RECEIVED) via the real Bot API.
   deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol) =>
     services.sendToUser(chatId, depositReceivedMessage(address, amountSol, newBalanceSol)).then(() => undefined);
+
+  // USER copy-trade alerts via the real Bot API.
+  copytrade.onUserAlert = (chatId, text) =>
+    services.sendToUser(chatId, text).then(() => undefined);
 
   // Bot readiness is established once at startup (getMe above); the health
   // endpoint reports the cached result instead of re-calling the Bot API on
@@ -236,8 +244,9 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
         watcherTimer.unref?.();
       }
 
-      // 4. Deposit monitor.
+      // 4. Deposit monitor + copy-trade monitor.
       deposits.start();
+      copytrade.start();
 
       // 5. Telegram polling (long-running, resilient).
       //    A 409 conflict (another instance polling the same bot token, or a
@@ -295,6 +304,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
       if (watcherTimer) clearInterval(watcherTimer);
       watcher?.stop();
       deposits.stop();
+      copytrade.stop();
       try {
         await bot.stop();
       } catch {

@@ -8,7 +8,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.TELEGRAM_POLL_ALLOWED_UPDATES = exports.TELEGRAM_POLL_TIMEOUT_SECONDS = exports.DEFAULT_RPC_URLS = exports.EXPLORER_ADDRESS_URL = exports.EXPLORER_TX_URL = exports.MAX_SLIPPAGE_BPS = exports.MIN_SLIPPAGE_BPS = exports.MIN_TRADE_LAMPORTS = exports.MIN_SOL_RESERVE = exports.DEPOSIT_DUST_LAMPORTS = exports.SOLANA_DERIVATION_PATH = exports.LAMPORTS_PER_SOL = exports.WSOL_MINT = exports.APP_VERSION = exports.APP_NAME = void 0;
 /** Product name — overridable via the APP_NAME environment variable. */
 exports.APP_NAME = process.env.APP_NAME?.trim() || 'Nexo Snipe';
-exports.APP_VERSION = '1.3.0';
+exports.APP_VERSION = '1.4.0';
 /** Wrapped-SOL mint (native SOL on SPL token rails). */
 exports.WSOL_MINT = 'So11111111111111111111111111111111111111112';
 /** Lamports in one SOL. */

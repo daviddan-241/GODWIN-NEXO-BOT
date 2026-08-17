@@ -160,6 +160,9 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     const { generateMnemonic } = await import('../../src/wallet/derive');
     const mnemonic = generateMnemonic();
     a.mockBot.enqueueText(c, mnemonic);
+    // Immediate ack, then the result (the flow never looks stuck):
+    const ack = await a.mockBot.waitForText(c, 'Validating and encrypting');
+    expect(ack.text).toContain('Validating and encrypting your wallet');
     const done = await a.mockBot.waitForText(c, 'Wallet Created');
     expect(done.text).toContain('Balance:');
 
@@ -434,13 +437,30 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(a.admin.messages.find((m) => m.text.includes('Withdrawal confirmed'))).toBeTruthy();
   });
 
-  it('Disconnect deactivates the last wallet (soft disconnect)', async () => {
+  it('Disconnect asks to confirm, then refreshes the terminal', async () => {
     const { app: a, chatId: c } = await nextChat();
     await startWithWallet(a, c);
 
+    // Step 1: confirmation prompt (Confirm / Cancel buttons).
     a.mockBot.enqueueCallback(c, 'wallet_disconnect');
-    const done = await a.mockBot.waitForText(c, 'Wallet Disconnected');
-    expect(done.text).toContain('Your wallet has been disconnected.');
+    const confirm = await a.mockBot.waitForText(c, 'Disconnect Wallet?');
+    expect(confirm.text).toContain('Confirm to disconnect');
+    expect(JSON.stringify(confirm.payload.reply_markup)).toContain('wallet_disconnect_confirm');
+    expect(JSON.stringify(confirm.payload.reply_markup)).toContain('cancel');
+
+    // Cancel first: wallet stays active.
+    a.mockBot.enqueueCallback(c, 'cancel');
+    await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
+    expect(await a.services.repos.getActiveWallets(c)).toHaveLength(1);
+
+    // Step 2: confirm — wallet deactivates and the terminal refreshes.
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, 'wallet_disconnect');
+    await a.mockBot.waitForText(c, 'Disconnect Wallet?');
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, 'wallet_disconnect_confirm');
+    const refreshed = await a.mockBot.waitForText(c, 'PORTFOLIO (0 wallets)');
+    expect(refreshed.text).toContain('No wallets connected.');
     expect(await a.services.repos.getActiveWallets(c)).toHaveLength(0);
   });
 
@@ -525,8 +545,12 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     const { app: a, chatId: c } = await nextChat();
     await startWithWallet(a, c);
 
+    a.mockBot.clearOutgoing();
     a.mockBot.enqueueCallback(c, 'wallet_disconnect');
-    await a.mockBot.waitForText(c, 'Wallet Disconnected');
+    await a.mockBot.waitForText(c, 'Disconnect Wallet?');
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, 'wallet_disconnect_confirm');
+    await a.mockBot.waitForText(c, 'PORTFOLIO (0 wallets)');
 
     // Row kept (audit), marked inactive:
     const all = await a.services.repos.getWallets(c);
@@ -657,6 +681,125 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     // The derived key MUST be the real key for the stored address:
     const { Keypair } = await import('@solana/web3.js');
     expect(Keypair.fromSeed(Buffer.from(pk, 'hex')).publicKey.toBase58()).toBe(wallets[1].address);
+  });
+
+  it('SELL requires a connected wallet (real gate)', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    a.mockBot.enqueueText(c, '/start');
+    await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
+
+    a.mockBot.enqueueCallback(c, 'sell_token');
+    const gate = await a.mockBot.waitForText(c, '⚠️ Wallet Required');
+    expect(gate.text).toContain('Please connect a wallet first to buy or sell tokens.');
+  });
+
+  it('copy trade monitor: REAL alerts + mirrored trades with limits', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    await startWithWallet(a, c);
+
+    // Activate copy trade on a real target wallet address.
+    const target = OTHER_TOKEN_MINT;
+    await a.services.repos.updateCopyTrade(c, {
+      targetWallet: target,
+      status: 'ACTIVE',
+      mode: 'buy_sell',
+      maxSolPerTrade: 1,
+      maxDailySol: 5,
+      slippage: 1,
+    });
+
+    // Market data for the mirrored token.
+    const bonk = a.tokens.makeToken({ address: TEST_TOKEN_MINT, symbol: 'USDC', priceUsd: 1.0 });
+    a.tokens.register(bonk);
+    a.solana.mints.set(TEST_TOKEN_MINT, { decimals: 6, isInitialized: true });
+    a.swaps.quotes.push(makeQuote({ inAmount: '50000000', outAmount: '7500000' }));
+
+    // The target wallet's REAL chain activity: one buy + one failed tx.
+    const buySig = '5copyTradeBuySigCopyTradeBuySigCopyTradeBuySigCopy';
+    const failSig = '5copyTradeFailSigCopyTradeFailSigCopyTradeFailSig';
+    a.solana.signatures.set(target, [
+      { signature: buySig, err: null },
+      { signature: failSig, err: true },
+    ]);
+    a.solana.swapSignals.set(buySig, {
+      signature: buySig,
+      blockTime: Math.floor(Date.now() / 1000),
+      ok: true,
+      signals: [
+        { direction: 'buy', mint: TEST_TOKEN_MINT, tokenAmountRaw: '7500000', decimals: 6, solLamports: '50000000' },
+      ],
+    });
+    a.solana.swapSignals.set(failSig, {
+      signature: failSig,
+      blockTime: Math.floor(Date.now() / 1000),
+      ok: false,
+      signals: [],
+    });
+
+    await a.services.copytrade.pollOnce();
+
+    // 1) COPY TRADE ALERT for both transactions (real statuses):
+    const alerts = a.mockBot.outgoing.filter(
+      (m) => m.chat_id === c && m.text?.includes('COPY TRADE ALERT'),
+    );
+    expect(alerts.length).toBe(2);
+    expect(alerts.some((m) => m.text!.includes('✅ Success'))).toBe(true);
+    expect(alerts.some((m) => m.text!.includes('❌ Failed'))).toBe(true);
+    expect(alerts.some((m) => m.text!.includes('View on Solscan'))).toBe(true);
+
+    // 2) The mirrored BUY was REAL: a signed swap was produced and recorded.
+    expect(a.solana.sentTransactions).toHaveLength(1);
+    const trades = await a.services.repos.getTrades(c);
+    expect(trades).toHaveLength(1);
+    expect(trades[0].side).toBe('buy');
+    expect(trades[0].outputMint).toBe(TEST_TOKEN_MINT);
+
+    // 3) Admin events: alert + executed.
+    expect(a.admin.messages.find((m) => m.text.includes('Copy trade alert'))).toBeTruthy();
+    expect(a.admin.messages.find((m) => m.text.includes('Copy trade executed'))).toBeTruthy();
+
+    // 4) Dedupe: a second poll produces no new alerts/trades.
+    a.mockBot.clearOutgoing();
+    await a.services.copytrade.pollOnce();
+    const secondAlerts = a.mockBot.outgoing.filter(
+      (m) => m.chat_id === c && m.text?.includes('COPY TRADE ALERT'),
+    );
+    expect(secondAlerts).toHaveLength(0);
+    expect(a.solana.sentTransactions).toHaveLength(1);
+  });
+
+  it('copy trade respects the daily SOL cap (skip, never exceeds)', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    await startWithWallet(a, c);
+
+    const target = OTHER_TOKEN_MINT;
+    await a.services.repos.updateCopyTrade(c, {
+      targetWallet: target,
+      status: 'ACTIVE',
+      mode: 'buy_sell',
+      maxSolPerTrade: 1,
+      maxDailySol: 0.01, // tiny cap
+      slippage: 1,
+    });
+
+    const sig = '5copyTradeCapSigCopyTradeCapSigCopyTradeCapSigCopy';
+    a.solana.signatures.set(target, [{ signature: sig, err: null }]);
+    a.solana.swapSignals.set(sig, {
+      signature: sig,
+      blockTime: Math.floor(Date.now() / 1000),
+      ok: true,
+      signals: [
+        { direction: 'buy', mint: TEST_TOKEN_MINT, tokenAmountRaw: '7500000', decimals: 6, solLamports: '50000000' },
+      ],
+    });
+
+    await a.services.copytrade.pollOnce();
+
+    // No trade executed (cap exceeded) and a skip event explains why.
+    expect(a.solana.sentTransactions).toHaveLength(0);
+    const skipped = a.admin.messages.find((m) => m.text.includes('Copy trade skipped'));
+    expect(skipped).toBeTruthy();
+    expect(skipped!.text).toContain('daily SOL cap');
   });
 
   it('mainnet gate: no trade can execute without explicit mainnet config', async () => {
