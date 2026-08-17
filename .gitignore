@@ -1,8 +1,13 @@
 # Dependencies
 node_modules/
 
-# Build output
-dist/
+# Build output — dist/src + dist/assets are COMMITTED as a prebuilt
+# fallback so hosts without a build step (`node src/index.js`) still work.
+dist/*
+!dist/src/
+!dist/assets/
+!dist/src/**
+!dist/assets/**
 coverage/
 
 # Environment — never commit real credentials

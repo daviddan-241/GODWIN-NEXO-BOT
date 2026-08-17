@@ -1,0 +1,11 @@
+-- 0004_nexo_v2.sql
+-- v2 spec: wallet active state + last balance check, copy-trade limits.
+
+ALTER TABLE wallets ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE wallets ADD COLUMN IF NOT EXISTS last_balance_check TIMESTAMPTZ;
+
+ALTER TABLE copy_trade ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'buy_sell';
+ALTER TABLE copy_trade ADD COLUMN IF NOT EXISTS max_sol_per_trade DOUBLE PRECISION NOT NULL DEFAULT 1;
+ALTER TABLE copy_trade ADD COLUMN IF NOT EXISTS max_daily_sol DOUBLE PRECISION NOT NULL DEFAULT 10;
+ALTER TABLE copy_trade ADD COLUMN IF NOT EXISTS slippage DOUBLE PRECISION NOT NULL DEFAULT 10;
+ALTER TABLE copy_trade ADD COLUMN IF NOT EXISTS token_filter TEXT;

@@ -19,7 +19,8 @@
     "test:integration": "vitest run tests/integration",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:ping": "tsx scripts/db-ping.ts",
-    "check:env": "tsx scripts/check-env.ts"
+    "check:env": "tsx scripts/check-env.ts",
+    "build:prebuilt": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs"
   },
   "dependencies": {
     "@grammyjs/types": "^3.9.0",
@@ -43,5 +44,6 @@
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.19.1",
     "vitest": "^2.1.8"
-  }
+  },
+  "main": "dist/src/index.js"
 }

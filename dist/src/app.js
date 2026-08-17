@@ -1,0 +1,220 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createDatabase = void 0;
+exports.createApp = createApp;
+/**
+ * Application assembly: builds every real production dependency and wires
+ * them together. Tests reuse the same `createBot` with injected doubles.
+ */
+const node_fs_1 = __importDefault(require("node:fs"));
+const node_path_1 = __importDefault(require("node:path"));
+const client_1 = require("./db/client");
+Object.defineProperty(exports, "createDatabase", { enumerable: true, get: function () { return client_1.createDatabase; } });
+const migrate_1 = require("./db/migrate");
+const repos_1 = require("./db/repos");
+const client_2 = require("./solana/client");
+const jupiter_1 = require("./market/jupiter");
+const coingecko_1 = require("./market/coingecko");
+const dexscreener_1 = require("./market/dexscreener");
+const ws_watcher_1 = require("./solana/ws-watcher");
+const derive_1 = require("./wallet/derive");
+const service_1 = require("./wallet/service");
+const executor_1 = require("./trading/executor");
+const service_2 = require("./portfolio/service");
+const monitor_1 = require("./deposits/monitor");
+const transport_1 = require("./admin/transport");
+const notifier_1 = require("./admin/notifier");
+const session_1 = require("./telegram/session");
+const bot_1 = require("./telegram/bot");
+const server_1 = require("./health/server");
+const constants_1 = require("./config/constants");
+const messages_1 = require("./telegram/messages");
+function resolveLogoPath() {
+    const candidates = [
+        node_path_1.default.resolve(__dirname, '..', '..', 'assets', 'nexo_logo_clean.png'),
+        node_path_1.default.resolve(__dirname, '..', 'assets', 'nexo_logo_clean.png'),
+    ];
+    for (const c of candidates)
+        if (node_fs_1.default.existsSync(c))
+            return c;
+    return candidates[0];
+}
+function createApp(config, logger, database) {
+    const repos = new repos_1.Repos(database.db);
+    const solana = new client_2.ConnectionSolanaClient({
+        rpcUrl: config.rpcUrl,
+        commitment: config.COMMITMENT,
+    });
+    const prices = new jupiter_1.JupiterPriceProvider(config.JUPITER_PRICE_API_URL, logger);
+    const swaps = new jupiter_1.JupiterSwapProvider(config.JUPITER_QUOTE_API_URL, logger);
+    const market = new coingecko_1.CoinGeckoMarket(config.COINGECKO_API_URL, logger);
+    const tokens = new dexscreener_1.DexScreenerTokenSearch(config.DEXSCREENER_API_URL, logger);
+    const transport = new transport_1.TelegramAdminTransport(config);
+    const notifier = new notifier_1.AdminNotifier(transport, config.ADMIN_IDS, logger, true, 
+    // Durable admin event log (PostgreSQL).
+    { record: (type, traceId, payload) => repos.insertAdminEvent(type, traceId, payload) });
+    const wallets = new service_1.WalletService(repos, solana, config, logger);
+    const sessions = new session_1.DbSessionStore(repos);
+    const deposits = new monitor_1.DepositMonitor(config, repos, solana, notifier, logger);
+    const trading = new executor_1.TradingExecutor(config, repos, solana, swaps, prices, wallets, deposits, logger);
+    const portfolio = new service_2.PortfolioService(repos, solana, prices, logger);
+    const services = {
+        config,
+        logger,
+        repos,
+        solana,
+        prices,
+        swaps,
+        market,
+        tokens,
+        wallets,
+        trading,
+        portfolio,
+        deposits,
+        notifier,
+        sessions,
+        sendToUser: async () => {
+            throw new Error('sendToUser not wired yet');
+        },
+        sendLogo: async () => {
+            // wired below, once the bot exists
+        },
+    };
+    const bot = (0, bot_1.createBot)(services, config.BOT_TOKEN, config.telegramApiRoot);
+    // Wire the broadcast/deposit paths to the real Bot API client.
+    services.sendToUser = (chatId, text) => bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+    services.sendLogo = async (ctx) => {
+        const logo = resolveLogoPath();
+        if (node_fs_1.default.existsSync(logo)) {
+            await ctx.replyWithPhoto(new bot_1.InputFile(logo)).catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'logo send failed'));
+        }
+    };
+    // USER deposit notification (DEPOSIT RECEIVED) via the real Bot API.
+    deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol) => services.sendToUser(chatId, (0, messages_1.depositReceivedMessage)(address, amountSol, newBalanceSol)).then(() => undefined);
+    // Bot readiness is established once at startup (getMe above); the health
+    // endpoint reports the cached result instead of re-calling the Bot API on
+    // every poll.
+    let botVerified = false;
+    // Optional WebSocket watcher lifecycle (owned by the app).
+    let watcher = null;
+    let watcherTimer = null;
+    const health = (0, server_1.createHealthServer)({
+        database: () => (0, client_1.pingDatabase)(database),
+        rpc: () => solana.getHealth(),
+        bot: async () => {
+            if (!botVerified) {
+                await bot.api.getMe();
+                botVerified = true;
+            }
+            return true;
+        },
+    }, logger);
+    return {
+        services,
+        bot,
+        database,
+        async start() {
+            // 1. Database connectivity + migrations (idempotent).
+            await (0, client_1.pingDatabase)(database);
+            const applied = await (0, migrate_1.runMigrations)(database.pool);
+            if (applied.length > 0) {
+                logger.info({ applied }, 'database migrations applied');
+            }
+            else {
+                logger.info('database schema up to date');
+            }
+            // 2. Verify Telegram credentials before serving users.
+            const me = await bot.api.getMe();
+            botVerified = true;
+            logger.info({
+                botUsername: me.username,
+                network: config.SOLANA_NETWORK,
+                tradingAllowed: config.tradingAllowed,
+                rpcUrl: config.rpcUrl,
+                appName: constants_1.APP_NAME,
+                version: constants_1.APP_VERSION,
+            }, 'Telegram bot verified');
+            await bot.api
+                .setMyCommands([
+                { command: 'start', description: 'Open terminal' },
+                { command: 'wallet', description: 'Manage portfolio wallets' },
+                { command: 'generate', description: 'Create a new wallet' },
+                { command: 'import', description: 'Import an existing wallet' },
+                { command: 'status', description: 'Check wallet status' },
+                { command: 'help', description: 'Control center' },
+                { command: 'discover', description: 'Discover tokens' },
+                { command: 'cancel', description: 'Abort current action' },
+            ])
+                .catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'setMyCommands failed (non-fatal)'));
+            // 3. Health server (UptimeRobot: GET / or /health -> "OK").
+            if (config.HEALTHCHECK_ENABLED) {
+                health.listen(config.PORT, '0.0.0.0', () => {
+                    logger.info({ port: config.PORT }, 'health server listening on 0.0.0.0');
+                });
+            }
+            else {
+                logger.info('health server disabled (HEALTHCHECK_ENABLED=false)');
+            }
+            // 4. Optional owner seed phrase: derive + report the PUBLIC address
+            //    only. The seed itself is never logged or stored.
+            if (config.SEED_PHRASE) {
+                try {
+                    const owner = (0, derive_1.keypairFromMnemonic)(config.SEED_PHRASE);
+                    logger.info({ ownerAddress: owner.publicKey.toBase58() }, 'owner seed phrase configured');
+                }
+                catch (err) {
+                    throw new Error(`SEED_PHRASE is not a valid BIP39 mnemonic: ${err instanceof Error ? err.message : err}`);
+                }
+            }
+            // 5. Optional WebSocket account watcher: wakes the deposit monitor on
+            //    account changes. Polling remains authoritative either way.
+            if (config.SOLANA_WS_URL) {
+                watcher = new ws_watcher_1.SolanaAccountWatcher(config.rpcUrl, config.SOLANA_WS_URL, config.COMMITMENT, logger, () => void deposits.pollOnce());
+                watcher.start();
+                const reconcile = async () => {
+                    try {
+                        const wallets = await repos.allWallets();
+                        await watcher?.setAddresses(wallets.filter((w) => w.active !== false).map((w) => w.address));
+                    }
+                    catch {
+                        // reconcile failure is non-fatal
+                    }
+                };
+                void reconcile();
+                watcherTimer = setInterval(() => void reconcile(), 30_000);
+                watcherTimer.unref?.();
+            }
+            // 4. Deposit monitor.
+            deposits.start();
+            // 5. Telegram polling (long-running).
+            void bot
+                .start({
+                onStart: (info) => logger.info({ botUsername: info.username }, 'Telegram polling started'),
+                allowed_updates: ['message', 'callback_query'],
+                drop_pending_updates: false,
+            })
+                .catch((err) => {
+                logger.fatal({ err: err instanceof Error ? err.message : String(err) }, 'Telegram polling crashed');
+                process.exit(1);
+            });
+        },
+        async stop() {
+            if (watcherTimer)
+                clearInterval(watcherTimer);
+            watcher?.stop();
+            deposits.stop();
+            try {
+                await bot.stop();
+            }
+            catch {
+                // bot may already be stopped
+            }
+            health.close();
+            await database.pool.end();
+        },
+    };
+}
+//# sourceMappingURL=app.js.map
