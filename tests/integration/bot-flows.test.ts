@@ -437,31 +437,46 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(a.admin.messages.find((m) => m.text.includes('Withdrawal confirmed'))).toBeTruthy();
   });
 
-  it('Disconnect asks to confirm, then refreshes the terminal', async () => {
+  it('Disconnect: picker -> permanent warning -> confirm -> terminal refreshes', async () => {
     const { app: a, chatId: c } = await nextChat();
-    await startWithWallet(a, c);
+    const address = await startWithWallet(a, c);
 
-    // Step 1: confirmation prompt (Confirm / Cancel buttons).
+    // Step 1 (IMG_8145): wallet picker.
     a.mockBot.enqueueCallback(c, 'wallet_disconnect');
-    const confirm = await a.mockBot.waitForText(c, 'Disconnect Wallet?');
-    expect(confirm.text).toContain('Confirm to disconnect');
-    expect(JSON.stringify(confirm.payload.reply_markup)).toContain('wallet_disconnect_confirm');
-    expect(JSON.stringify(confirm.payload.reply_markup)).toContain('cancel');
+    const picker = await a.mockBot.waitForText(c, 'DISCONNECT WALLET');
+    expect(picker.text).toContain('Which wallet would you like to disconnect?');
+    expect(picker.text).toContain('Make sure you have backed up your private key!');
+    expect(JSON.stringify(picker.payload.reply_markup)).toContain(`dw_${address}`);
 
-    // Cancel first: wallet stays active.
+    // Step 2 (IMG_8146): permanent-disconnect warning.
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, `dw_${address}`);
+    const warning = await a.mockBot.waitForText(c, 'PERMANENTLY disconnect');
+    expect(warning.text).toContain('WARNING!');
+    expect(warning.text).toContain('Delete all wallet data');
+    expect(warning.text).toContain('Require you to re-generate or re-import it to use again');
+    expect(warning.text).toContain('Make sure you have saved your private key!');
+    expect(JSON.stringify(warning.payload.reply_markup)).toContain(`dwc_${address}`);
+
+    // Cancel keeps the wallet.
     a.mockBot.enqueueCallback(c, 'cancel');
     await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
     expect(await a.services.repos.getActiveWallets(c)).toHaveLength(1);
 
-    // Step 2: confirm — wallet deactivates and the terminal refreshes.
+    // Step 3: confirm — PERMANENT delete + refreshed terminal.
     a.mockBot.clearOutgoing();
     a.mockBot.enqueueCallback(c, 'wallet_disconnect');
-    await a.mockBot.waitForText(c, 'Disconnect Wallet?');
+    await a.mockBot.waitForText(c, 'DISCONNECT WALLET');
     a.mockBot.clearOutgoing();
-    a.mockBot.enqueueCallback(c, 'wallet_disconnect_confirm');
+    a.mockBot.enqueueCallback(c, `dw_${address}`);
+    await a.mockBot.waitForText(c, 'PERMANENTLY disconnect');
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, `dwc_${address}`);
     const refreshed = await a.mockBot.waitForText(c, 'PORTFOLIO (0 wallets)');
     expect(refreshed.text).toContain('No wallets connected.');
     expect(await a.services.repos.getActiveWallets(c)).toHaveLength(0);
+    // The wallet row itself is permanently deleted:
+    expect(await a.services.repos.getWallets(c)).toHaveLength(0);
   });
 
   it('Help shows the NEXO CONTROL CENTER with commands and links', async () => {
@@ -541,21 +556,21 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(a.solana.sentTransactions).toHaveLength(1);
   });
 
-  it('soft disconnect marks the wallet inactive without deleting it', async () => {
+  it('disconnect is permanent: picker -> confirm deletes the wallet row', async () => {
     const { app: a, chatId: c } = await nextChat();
-    await startWithWallet(a, c);
+    const address = await startWithWallet(a, c);
 
-    a.mockBot.clearOutgoing();
     a.mockBot.enqueueCallback(c, 'wallet_disconnect');
-    await a.mockBot.waitForText(c, 'Disconnect Wallet?');
+    await a.mockBot.waitForText(c, 'DISCONNECT WALLET');
     a.mockBot.clearOutgoing();
-    a.mockBot.enqueueCallback(c, 'wallet_disconnect_confirm');
+    a.mockBot.enqueueCallback(c, `dw_${address}`);
+    await a.mockBot.waitForText(c, 'PERMANENTLY disconnect');
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, `dwc_${address}`);
     await a.mockBot.waitForText(c, 'PORTFOLIO (0 wallets)');
 
-    // Row kept (audit), marked inactive:
-    const all = await a.services.repos.getWallets(c);
-    expect(all).toHaveLength(1);
-    expect(all[0].active).toBe(false);
+    // PERMANENT: the row is deleted (as the warning states).
+    expect(await a.services.repos.getWallets(c)).toHaveLength(0);
     expect(await a.services.repos.getActiveWallets(c)).toHaveLength(0);
 
     // Portfolio shows zero connected wallets:
@@ -681,6 +696,58 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     // The derived key MUST be the real key for the stored address:
     const { Keypair } = await import('@solana/web3.js');
     expect(Keypair.fromSeed(Buffer.from(pk, 'hex')).publicKey.toBase58()).toBe(wallets[1].address);
+  });
+
+  it('⚡ Trade button opens the TRADE TERMINAL (photo dashboards cannot be edited)', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    const address = await startWithWallet(a, c);
+
+    // Clicking Trade from the PHOTO dashboard must reply with the terminal
+    // (editMessageText on a photo is impossible — regression guard).
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, 'trade');
+    const trade = await a.mockBot.waitForText(c, '⚡ TRADE TERMINAL');
+    expect(trade.text).toContain('Choose an action for your connected wallet.');
+    expect(trade.text).toContain('Buy — inspect a token, choose size, confirm');
+    expect(trade.text).toContain('Sell — review open positions, choose an exit');
+    expect(trade.text).toContain('Gate: wallet + configured minimum balance required');
+    for (const btn of ['🪙 Buy Token', '💸 Sell Position', '📊 View Positions', '🏠 Terminal']) {
+      expect(JSON.stringify(trade.payload.reply_markup)).toContain(btn);
+    }
+    void address;
+  });
+
+  it('Trade shows the exact BUY GATE NOT MET screen under the minimum', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    a.mockBot.enqueueText(c, '/start');
+    await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
+    // Wallet with a tiny balance (below MIN_SOL_BALANCE=0.001 is fine):
+    a.mockBot.enqueueCallback(c, 'wallet_add');
+    await a.mockBot.waitForText(c, 'Wallet Created');
+    const wallet = (await a.services.repos.getWallets(c))[0];
+    a.solana.balances.set(wallet.address, 100_000_000); // 0.1 SOL < 3.2 min? use min 3.2 via config
+    void wallet;
+    // Deploy a config with a high minimum to force the gate screen:
+    const app2 = await startTestApp({ MIN_SOL_BALANCE: '3.2000' });
+    try {
+      const c2 = 2_000_051;
+      app2.mockBot.enqueueText(c2, '/start');
+      await app2.mockBot.waitForText(c2, 'NEXO / TRADING TERMINAL');
+      app2.mockBot.enqueueCallback(c2, 'wallet_add');
+      await app2.mockBot.waitForText(c2, 'Wallet Created');
+      const w2 = (await app2.services.repos.getWallets(c2))[0];
+      app2.solana.balances.set(w2.address, 200_000_000); // 0.2 SOL
+
+      app2.mockBot.clearOutgoing();
+      app2.mockBot.enqueueCallback(c2, 'trade');
+      const gate = await app2.mockBot.waitForText(c2, 'BUY GATE NOT MET');
+      expect(gate.text).toContain('Your Balance: 0.2000 SOL');
+      expect(gate.text).toContain('Minimum Required: 3.2000 SOL');
+      expect(gate.text).toContain('You Need: 3.0000 SOL more');
+      expect(gate.text).toContain('Deposit SOL into the connected wallet to unlock manual trading.');
+    } finally {
+      await app2.cleanup();
+    }
   });
 
   it('SELL requires a connected wallet (real gate)', async () => {

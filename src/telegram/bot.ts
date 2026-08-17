@@ -35,6 +35,7 @@ import {
   walletStatusHandler,
   walletRefreshHandler,
   walletDisconnectHandler,
+  walletDisconnectPickHandler,
   walletDisconnectConfirmHandler,
   walletRobinhoodHandler,
   tradeWalletPickHandler,
@@ -191,7 +192,8 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   bot.callbackQuery('wallet_refresh', (ctx) => walletRefreshHandler(ctx));
   bot.callbackQuery('wallet_withdraw', (ctx) => withdrawStartHandler(ctx));
   bot.callbackQuery('wallet_disconnect', (ctx) => walletDisconnectHandler(ctx));
-  bot.callbackQuery('wallet_disconnect_confirm', (ctx) => walletDisconnectConfirmHandler(ctx));
+  bot.callbackQuery(/^dw_(.+)$/, (ctx) => walletDisconnectPickHandler(ctx, ctx.match[1]));
+  bot.callbackQuery(/^dwc_(.+)$/, (ctx) => walletDisconnectConfirmHandler(ctx, ctx.match[1]));
   bot.callbackQuery('wallet_robinhood', (ctx) => walletRobinhoodHandler(ctx));
   bot.callbackQuery('discover', (ctx) => discoverHandler(ctx));
   bot.callbackQuery('trade', (ctx) => tradeHandler(ctx));

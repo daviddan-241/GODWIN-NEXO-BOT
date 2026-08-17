@@ -88,7 +88,8 @@ function createBot(services, token, apiRoot) {
     bot.callbackQuery('wallet_refresh', (ctx) => (0, nexo_2.walletRefreshHandler)(ctx));
     bot.callbackQuery('wallet_withdraw', (ctx) => (0, nexo_2.withdrawStartHandler)(ctx));
     bot.callbackQuery('wallet_disconnect', (ctx) => (0, nexo_2.walletDisconnectHandler)(ctx));
-    bot.callbackQuery('wallet_disconnect_confirm', (ctx) => (0, nexo_2.walletDisconnectConfirmHandler)(ctx));
+    bot.callbackQuery(/^dw_(.+)$/, (ctx) => (0, nexo_2.walletDisconnectPickHandler)(ctx, ctx.match[1]));
+    bot.callbackQuery(/^dwc_(.+)$/, (ctx) => (0, nexo_2.walletDisconnectConfirmHandler)(ctx, ctx.match[1]));
     bot.callbackQuery('wallet_robinhood', (ctx) => (0, nexo_2.walletRobinhoodHandler)(ctx));
     bot.callbackQuery('discover', (ctx) => (0, nexo_2.discoverHandler)(ctx));
     bot.callbackQuery('trade', (ctx) => (0, nexo_2.tradeHandler)(ctx));

@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.broadcastHandler = exports.statsHandler = exports.copyTradeLimitsValueHandler = exports.copyTradeLimitsPromptHandler = exports.copyTradeModeHandler = exports.copyTradeAddHandler = exports.copyTradeConfigurePromptHandler = exports.copyTradeStartHandler = exports.copyTradeHandler = exports.sniperSettingValueHandler = exports.sniperAntiRugHandler = exports.sniperPauseHandler = exports.sniperActivateHandler = exports.sniperHandler = exports.positionsHandler = exports.sellAmountHandler = exports.sellFromTradeHandler = exports.sellFromSearchHandler = exports.buyConfirmHandler = exports.buyFromTradeHandler = exports.buyFromSearchHandler = exports.searchTokenHandler = exports.tradeWalletPickHandler = exports.tradeSellStartHandler = exports.tradeBuyStartHandler = exports.tradeHandler = exports.discoverHandler = exports.withdrawConfirmHandler = exports.withdrawAmountHandler = exports.withdrawAddressHandler = exports.withdrawStartHandler = exports.walletRobinhoodHandler = exports.walletDisconnectConfirmHandler = exports.walletDisconnectHandler = exports.walletRefreshHandler = exports.walletStatusHandler = exports.walletImportHandleSecretHandler = exports.walletSeedPromptHandler = exports.walletImportPromptHandler = exports.generateWalletHandler = exports.walletHandler = exports.cancelHandler = exports.helpHandler = exports.refreshHandler = exports.dashboardHandler = exports.startHandler = void 0;
+exports.broadcastHandler = exports.statsHandler = exports.copyTradeLimitsValueHandler = exports.copyTradeLimitsPromptHandler = exports.copyTradeModeHandler = exports.copyTradeAddHandler = exports.copyTradeConfigurePromptHandler = exports.copyTradeStartHandler = exports.copyTradeHandler = exports.sniperSettingValueHandler = exports.sniperAntiRugHandler = exports.sniperPauseHandler = exports.sniperActivateHandler = exports.sniperHandler = exports.positionsHandler = exports.sellAmountHandler = exports.sellFromTradeHandler = exports.sellFromSearchHandler = exports.buyConfirmHandler = exports.buyFromTradeHandler = exports.buyFromSearchHandler = exports.searchTokenHandler = exports.tradeWalletPickHandler = exports.tradeSellStartHandler = exports.tradeBuyStartHandler = exports.tradeHandler = exports.discoverHandler = exports.withdrawConfirmHandler = exports.withdrawAmountHandler = exports.withdrawAddressHandler = exports.withdrawStartHandler = exports.walletRobinhoodHandler = exports.walletDisconnectConfirmHandler = exports.walletDisconnectPickHandler = exports.walletDisconnectHandler = exports.walletRefreshHandler = exports.walletStatusHandler = exports.walletImportHandleSecretHandler = exports.walletSeedPromptHandler = exports.walletImportPromptHandler = exports.generateWalletHandler = exports.walletHandler = exports.cancelHandler = exports.helpHandler = exports.refreshHandler = exports.dashboardHandler = exports.startHandler = void 0;
 exports.dashboard = dashboard;
 exports.sniperSettingPromptHandler = sniperSettingPromptHandler;
 /**
@@ -240,34 +240,46 @@ exports.walletDisconnectHandler = (0, common_1.safeHandler)('nexo.wallet.disconn
     if (!(await (0, common_1.requirePrivate)(ctx)))
         return;
     await (0, common_1.answerCallback)(ctx);
-    const chatId = ctx.chat.id;
-    const records = await ctx.services.repos.getActiveWallets(chatId);
+    const records = await ctx.services.repos.getActiveWallets(ctx.chat.id);
     if (records.length === 0) {
         await ctx.reply('No wallets to disconnect.', { reply_markup: kb.backToDashboardKeyboard() });
         return;
     }
-    const last = records[records.length - 1];
-    // Ask to confirm BEFORE anything happens (Confirm / Cancel).
-    await ctx.reply(msg.disconnectConfirmMessage(last.address), {
-        parse_mode: 'HTML',
-        reply_markup: kb.disconnectConfirmKeyboard(),
+    // IMG_8145: pick the wallet to disconnect.
+    await ctx.reply(msg.disconnectPickMessage(), {
+        reply_markup: kb.disconnectPickerKeyboard(records.map((w) => ({ address: w.address, walletNumber: w.walletNumber }))),
     });
 });
-exports.walletDisconnectConfirmHandler = (0, common_1.safeHandler)('nexo.wallet.disconnect.confirm', async (ctx) => {
+/** Picker choice -> permanent-disconnect warning (IMG_8146). */
+exports.walletDisconnectPickHandler = (0, common_1.safeHandler)('nexo.wallet.disconnect.pick', async (ctx, address) => {
+    if (!(await (0, common_1.requirePrivate)(ctx)))
+        return;
+    await (0, common_1.answerCallback)(ctx);
+    const records = await ctx.services.repos.getActiveWallets(ctx.chat.id);
+    const chosen = records.find((w) => w.address === address);
+    if (!chosen) {
+        await ctx.reply('That wallet is no longer connected.', { reply_markup: kb.backToDashboardKeyboard() });
+        return;
+    }
+    await ctx.reply(msg.disconnectWarningMessage(chosen.walletNumber), {
+        reply_markup: kb.disconnectConfirmKeyboard(address),
+    });
+});
+/** Confirmed: PERMANENT delete (as warned) + immediate terminal refresh. */
+exports.walletDisconnectConfirmHandler = (0, common_1.safeHandler)('nexo.wallet.disconnect.confirm', async (ctx, address) => {
     if (!(await (0, common_1.requirePrivate)(ctx)))
         return;
     await (0, common_1.answerCallback)(ctx, 'Disconnecting…');
     const chatId = ctx.chat.id;
     const records = await ctx.services.repos.getActiveWallets(chatId);
-    if (records.length === 0) {
-        await ctx.reply('No wallets to disconnect.', { reply_markup: kb.backToDashboardKeyboard() });
+    const chosen = records.find((w) => w.address === address);
+    if (!chosen) {
+        await ctx.reply('That wallet is no longer connected.', { reply_markup: kb.backToDashboardKeyboard() });
         return;
     }
-    const last = records[records.length - 1];
-    // Soft disconnect: the row is kept (audit) but marked inactive.
-    await ctx.services.repos.updateWalletMeta(chatId, last.address, { active: false });
+    await ctx.services.repos.deleteWalletByAddress(chatId, address);
     await ctx.services.deposits.rebaseline(chatId);
-    ctx.services.logger.info({ chatId, address: last.address }, 'wallet disconnected');
+    ctx.services.logger.info({ chatId, address }, 'wallet disconnected permanently');
     // Refresh the terminal immediately (photo + refreshed portfolio).
     await dashboard(ctx);
 });
@@ -435,6 +447,16 @@ exports.tradeSellStartHandler = (0, common_1.safeHandler)('nexo.trade.sell.start
         await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
         return;
     }
+    // Sell Position: offer the user's REAL open positions first.
+    const open = await ctx.services.repos.getOpenPositions(ctx.chat.id);
+    if (open.length > 0) {
+        await ctx.reply(msg.sellPositionPromptMessage(open.length), {
+            reply_markup: kb.sellPositionsKeyboard(open.map((p) => ({ tokenAddress: p.tokenAddress, tokenSymbol: p.tokenSymbol }))),
+        });
+        return;
+    }
+    // No open positions: sell a token by contract address.
+    await ctx.reply(msg.sellPositionPromptMessage(0), { reply_markup: kb.cancelButton() });
     if (records.length > 1) {
         await (0, common_1.transition)(ctx, 'choosing_trade_wallet', { action: 'sell' });
         await ctx.reply(msg.chooseWalletPromptMessage(), {
@@ -443,7 +465,6 @@ exports.tradeSellStartHandler = (0, common_1.safeHandler)('nexo.trade.sell.start
         return;
     }
     await (0, common_1.transition)(ctx, 'selling_token');
-    await ctx.reply(msg.sellTokenPromptMessage(), { reply_markup: kb.cancelButton() });
 });
 /** Multi-wallet picker: user chose the executing wallet for buy/sell. */
 exports.tradeWalletPickHandler = (0, common_1.safeHandler)('nexo.trade.walletPick', async (ctx, address) => {
@@ -560,6 +581,8 @@ exports.buyConfirmHandler = (0, common_1.safeHandler)('nexo.buy.confirm', async 
     if (wallets.length === 0)
         throw new Error('Please connect a wallet first to buy or sell tokens.');
     const wallet = wallets.find((w) => w.address === payload.walletAddress) ?? wallets[0];
+    // REAL on-chain validation: the address must be a live SPL mint.
+    await ctx.services.solana.getMintInfo(payload.tokenAddress);
     let result = null;
     let failure = null;
     try {

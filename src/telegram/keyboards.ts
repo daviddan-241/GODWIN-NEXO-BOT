@@ -98,9 +98,33 @@ export function confirmCancelKeyboard(): InlineKeyboard {
   return new InlineKeyboard().text('✅ Confirm', 'withdraw_confirm').text('❌ Cancel', 'cancel');
 }
 
-/** Disconnect confirm. */
-export function disconnectConfirmKeyboard(): InlineKeyboard {
-  return new InlineKeyboard().text('✅ Confirm', 'wallet_disconnect_confirm').text('❌ Cancel', 'cancel');
+/** Disconnect picker (IMG_8145): one button per connected wallet. */
+export function disconnectPickerKeyboard(
+  wallets: Array<{ address: string; walletNumber: number }>,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const w of wallets) {
+    kb.text(`🔌 Disconnect SOL Wallet ${w.walletNumber} (${w.address.slice(0, 8)}…)`, `dw_${w.address}`).row();
+  }
+  return kb.text('❌ Cancel', 'cancel');
+}
+
+/** Permanent-disconnect confirmation (IMG_8146). */
+export function disconnectConfirmKeyboard(address: string): InlineKeyboard {
+  return new InlineKeyboard()
+    .text('✅ Confirm Disconnect', `dwc_${address}`)
+    .text('❌ Cancel', 'cancel');
+}
+
+/** Open-positions picker for Sell Position. */
+export function sellPositionsKeyboard(
+  positions: Array<{ tokenAddress: string; tokenSymbol: string }>,
+): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  for (const p of positions) {
+    kb.text(`💸 ${p.tokenSymbol}`, `sell_${p.tokenAddress}`).row();
+  }
+  return kb.text('❌ Cancel', 'cancel');
 }
 
 /** Token search result. */
@@ -113,13 +137,14 @@ export function tokenSearchKeyboard(tokenAddress: string): InlineKeyboard {
     .text('🏠 Back to Terminal', 'back_dashboard');
 }
 
-/** Trade screen. */
+/** TRADE TERMINAL (IMG_8147). */
 export function tradeKeyboard(): InlineKeyboard {
   return new InlineKeyboard()
-    .text('🪙 Buy', 'buy_sol')
-    .text('💸 Sell', 'sell_token')
+    .text('🪙 Buy Token', 'buy_sol')
+    .text('💸 Sell Position', 'sell_token')
     .row()
-    .text('🏠 Back to Terminal', 'back_dashboard');
+    .text('📊 View Positions', 'positions')
+    .text('🏠 Terminal', 'back_dashboard');
 }
 
 /** Copy trade screen (v2 limits). */

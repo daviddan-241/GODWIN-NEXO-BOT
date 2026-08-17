@@ -263,14 +263,15 @@ export const copyLimitsStepMessage = (step: string) => {
   }
 };
 
-// === TRADE ===
+// === TRADE TERMINAL (IMG_8147) ===
 export function tradeMessage(): string {
-  return `⚡ TRADE\n\nBuy: Purchase tokens instantly\nSell: Sell your tokens quickly\n\nSend the token contract address to begin.`;
+  return `⚡ TRADE TERMINAL\nChoose an action for your connected wallet.\n\n🪙 Buy — inspect a token, choose size, confirm\n💸 Sell — review open positions, choose an exit\n\n🔒 Gate: wallet + configured minimum balance required`;
 }
 
 export function insufficientBalanceMessage(balance: number, minimum: string): string {
   const min = parseFloat(minimum) || 3;
-  return `Insufficient Balance\n\nYour Balance: ${balance.toFixed(6)} SOL\nMinimum Required: ${minimum} SOL\nYou Need: ${Math.max(0, min - balance).toFixed(6)} SOL more\n\nDeposit SOL to your wallet to start trading.`;
+  const need = Math.max(0, min - balance);
+  return `⚠️ BUY GATE NOT MET\nYour Balance: ${balance.toFixed(4)} SOL\nMinimum Required: ${min.toFixed(4)} SOL\nYou Need: ${need.toFixed(4)} SOL more\nDeposit SOL into the connected wallet to unlock manual trading.`;
 }
 
 export const buyTokenPromptMessage = () => `Send the token contract address you want to buy:`;
@@ -325,9 +326,22 @@ export const robinhoodUnavailableMessage = () =>
 
 export const chooseWalletPromptMessage = () => `Which connected wallet should execute this trade?`;
 
-/** Disconnect confirmation (Confirm / Cancel per requirement). */
-export function disconnectConfirmMessage(address: string): string {
-  return `🔌 Disconnect Wallet?\n\n${copy(address)}\n\nThe wallet is removed from the terminal (keys stay encrypted in the database).\n\nConfirm to disconnect:`;
+/** Sell-position picker. */
+export function sellPositionPromptMessage(openPositions: number): string {
+  if (openPositions === 0) {
+    return `💸 SELL POSITION\n\nYou have no open positions.\nSend the token contract address to sell:`;
+  }
+  return `💸 SELL POSITION\n\nChoose an open position to sell:`;
+}
+
+/** Disconnect wallet picker (IMG_8145). */
+export function disconnectPickMessage(): string {
+  return `⚡ DISCONNECT WALLET\nWhich wallet would you like to disconnect?\nMake sure you have backed up your private key!`;
+}
+
+/** Permanent-disconnect warning (IMG_8146). */
+export function disconnectWarningMessage(walletNumber: number): string {
+  return `⚠️ DISCONNECT SOL WALLET ${walletNumber}\n\n⚠️ WARNING!\nYou are about to PERMANENTLY disconnect your SOL Wallet ${walletNumber}!\n\n✖ This will:\n• Remove your SOL Wallet ${walletNumber} from this bot\n• Delete all wallet data\n• Require you to re-generate or re-import it to use again\n\n⚠️ IMPORTANT: Make sure you have saved your private key!\n\nPlease confirm below:`;
 }
 
 /** Quick ack so the import flow never looks stuck. */

@@ -198,13 +198,14 @@ export class MultiProviderTokenResolver implements TokenSearchProvider {
       (t: { address?: string; mint?: string }) => (t.address ?? t.mint) === address,
     );
 
-    const name = dexToken?.name ?? pump?.name ?? fromList?.name ?? geckoToken?.name ?? 'Unknown';
-    const symbol = dexToken?.symbol ?? pump?.symbol ?? fromList?.symbol ?? raydiumPrice?.symbol ?? geckoToken?.symbol ?? '???';
+    const name = dexToken?.name ?? pump?.name ?? fromList?.name ?? geckoToken?.name ?? 'Unknown Token';
+    const symbol = dexToken?.symbol ?? pump?.symbol ?? fromList?.symbol ?? raydiumPrice?.symbol ?? geckoToken?.symbol ?? address.slice(0, 5).toUpperCase();
     const priceUsd = dexToken?.priceUsd ?? pump?.priceUsd ?? raydiumPrice?.price ?? birdeyePrice?.price ?? geckoToken?.priceUsd ?? 0;
     const dex = dexToken?.dex ?? (pump ? 'pumpfun' : 'unknown');
 
-    if (!fromList && !dexToken && !pump && !raydiumPrice && !birdeyePrice && !geckoToken) return null;
-
+    // STRENGTH: a valid Solana mint ALWAYS gets a card (old coins, low
+    // liquidity, new mints — every source may be thin, but the address is
+    // real and we show every detail we found).
     return this.assembleToken({
       address,
       chain: 'solana',

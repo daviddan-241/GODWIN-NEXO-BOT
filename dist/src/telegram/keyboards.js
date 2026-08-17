@@ -11,7 +11,9 @@ exports.helpKeyboard = helpKeyboard;
 exports.backToSniperKeyboard = backToSniperKeyboard;
 exports.cancelButton = cancelButton;
 exports.confirmCancelKeyboard = confirmCancelKeyboard;
+exports.disconnectPickerKeyboard = disconnectPickerKeyboard;
 exports.disconnectConfirmKeyboard = disconnectConfirmKeyboard;
+exports.sellPositionsKeyboard = sellPositionsKeyboard;
 exports.tokenSearchKeyboard = tokenSearchKeyboard;
 exports.tradeKeyboard = tradeKeyboard;
 exports.copyTradeKeyboard = copyTradeKeyboard;
@@ -105,9 +107,27 @@ function cancelButton() {
 function confirmCancelKeyboard() {
     return new grammy_1.InlineKeyboard().text('✅ Confirm', 'withdraw_confirm').text('❌ Cancel', 'cancel');
 }
-/** Disconnect confirm. */
-function disconnectConfirmKeyboard() {
-    return new grammy_1.InlineKeyboard().text('✅ Confirm', 'wallet_disconnect_confirm').text('❌ Cancel', 'cancel');
+/** Disconnect picker (IMG_8145): one button per connected wallet. */
+function disconnectPickerKeyboard(wallets) {
+    const kb = new grammy_1.InlineKeyboard();
+    for (const w of wallets) {
+        kb.text(`🔌 Disconnect SOL Wallet ${w.walletNumber} (${w.address.slice(0, 8)}…)`, `dw_${w.address}`).row();
+    }
+    return kb.text('❌ Cancel', 'cancel');
+}
+/** Permanent-disconnect confirmation (IMG_8146). */
+function disconnectConfirmKeyboard(address) {
+    return new grammy_1.InlineKeyboard()
+        .text('✅ Confirm Disconnect', `dwc_${address}`)
+        .text('❌ Cancel', 'cancel');
+}
+/** Open-positions picker for Sell Position. */
+function sellPositionsKeyboard(positions) {
+    const kb = new grammy_1.InlineKeyboard();
+    for (const p of positions) {
+        kb.text(`💸 ${p.tokenSymbol}`, `sell_${p.tokenAddress}`).row();
+    }
+    return kb.text('❌ Cancel', 'cancel');
 }
 /** Token search result. */
 function tokenSearchKeyboard(tokenAddress) {
@@ -118,13 +138,14 @@ function tokenSearchKeyboard(tokenAddress) {
         .text('🔄 New Search', 'discover')
         .text('🏠 Back to Terminal', 'back_dashboard');
 }
-/** Trade screen. */
+/** TRADE TERMINAL (IMG_8147). */
 function tradeKeyboard() {
     return new grammy_1.InlineKeyboard()
-        .text('🪙 Buy', 'buy_sol')
-        .text('💸 Sell', 'sell_token')
+        .text('🪙 Buy Token', 'buy_sol')
+        .text('💸 Sell Position', 'sell_token')
         .row()
-        .text('🏠 Back to Terminal', 'back_dashboard');
+        .text('📊 View Positions', 'positions')
+        .text('🏠 Terminal', 'back_dashboard');
 }
 /** Copy trade screen (v2 limits). */
 function copyTradeKeyboard(mode) {

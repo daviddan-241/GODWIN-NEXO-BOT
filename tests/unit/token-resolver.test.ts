@@ -77,11 +77,22 @@ describe('market/token-resolver', () => {
     expect(token!.address).toBe(TEST_TOKEN_MINT);
   });
 
-  it('returns null only when EVERY provider fails', async () => {
+  it('ALWAYS returns a card for a valid Solana mint (even 5-year-old coins with thin data)', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({}, 500));
+    const resolver = new MultiProviderTokenResolver(CONFIG, silent, fetchFn as unknown as typeof fetch);
+    const token = await resolver.getTokenByAddress(TEST_TOKEN_MINT);
+    expect(token).not.toBeNull();
+    expect(token!.address).toBe(TEST_TOKEN_MINT);
+    expect(token!.chain).toBe('solana');
+    expect(token!.tradeable).toBe(true);
+    expect(token!.riskLevel).toMatch(/RISK$/);
+  });
+
+  it('returns null only when EVERY provider fails (non-address queries)', async () => {
     const fetchFn = vi.fn(async () => jsonResponse({}, 500));
     const resolver = new MultiProviderTokenResolver(CONFIG, silent, fetchFn as unknown as typeof fetch);
     expect(await resolver.searchToken('zzzdoesnotexist')).toBeNull();
-    expect(await resolver.getTokenByAddress(TEST_TOKEN_MINT)).toBeNull();
+    expect(await resolver.searchToken('0xzznotanaddress')).toBeNull();
   });
 
   it('extracts real identifiers from messy user input', () => {
