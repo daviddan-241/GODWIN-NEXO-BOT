@@ -1,6 +1,5 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.InputFile = void 0;
 exports.createBot = createBot;
 /**
  * Telegram bot layer: grammY wiring for the NEXO TRADING TERMINAL UI,
@@ -8,7 +7,6 @@ exports.createBot = createBot;
  * container handed to handlers.
  */
 const grammy_1 = require("grammy");
-Object.defineProperty(exports, "InputFile", { enumerable: true, get: function () { return grammy_1.InputFile; } });
 const rate_limit_1 = require("./rate-limit");
 const nexo_1 = require("./handlers/nexo");
 const nexo_2 = require("./handlers/nexo");

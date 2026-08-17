@@ -25,6 +25,19 @@ export function keypairFromMnemonic(mnemonic: string): Keypair {
   return Keypair.fromSeed(derived.key);
 }
 
+/**
+ * Deterministic wallet at path m/44'/501'/0'/INDEX from a mnemonic.
+ * Used to generate user wallets from the operator SEED_PHRASE:
+ * wallet N of a user maps to INDEX = N-1, so the same seed reproduces
+ * every generated wallet (recovery = seed + wallet number).
+ */
+export function keypairFromMnemonicPath(mnemonic: string, index: number): Keypair {
+  if (!validateMnemonic(mnemonic.trim())) throw new Error('Invalid mnemonic phrase');
+  const seed = bip39.mnemonicToSeedSync(mnemonic.trim(), '');
+  const derived = derivePath(`m/44'/501'/0'/${Math.max(0, Math.floor(index))}'`, seed.toString('hex'));
+  return Keypair.fromSeed(derived.key);
+}
+
 /** Imports a keypair from a raw private key (32 bytes as hex or base58). */
 export function keypairFromPrivateKey(secret: string): Keypair {
   const cleaned = secret.trim();

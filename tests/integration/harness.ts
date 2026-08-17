@@ -98,8 +98,22 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     sendToUser: async () => {
       throw new Error('not wired');
     },
-    sendLogo: async () => {
-      // No photo in tests (the mock records the attempt only if sent).
+    sendTerminal: async (ctx, caption, keyboard) => {
+      // Send the REAL logo photo + caption through the mock Bot API so
+      // tests exercise the exact production path (multipart sendPhoto).
+      const { InputFile } = await import('grammy');
+      const { resolveLogoPath } = await import('../../src/telegram/logo');
+      const logo = resolveLogoPath();
+      const { existsSync } = await import('node:fs');
+      if (existsSync(logo)) {
+        await ctx.replyWithPhoto(new InputFile(logo), {
+          caption,
+          parse_mode: 'HTML',
+          reply_markup: keyboard,
+        });
+      } else {
+        await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: keyboard });
+      }
     },
   };
 

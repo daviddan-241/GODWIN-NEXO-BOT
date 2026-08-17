@@ -38,10 +38,10 @@ export class MockBotApiServer {
 
   constructor() {
     this.server = http.createServer((req, res) => {
-      let body = '';
-      req.on('data', (chunk: Buffer) => (body += chunk.toString()));
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
       req.on('end', () => {
-        void this.route(req, res, body);
+        void this.route(req, res, Buffer.concat(chunks));
       });
     });
   }
@@ -108,7 +108,7 @@ export class MockBotApiServer {
 
   // ---- HTTP routing ----------------------------------------------------
 
-  private async route(req: http.IncomingMessage, res: http.ServerResponse, body: string): Promise<void> {
+  private async route(req: http.IncomingMessage, res: http.ServerResponse, body: Buffer): Promise<void> {
     const match = (req.url ?? '').match(/^\/bot[^/]+\/([a-zA-Z]+)$/);
     res.setHeader('Content-Type', 'application/json');
     if (!match) {
@@ -117,21 +117,41 @@ export class MockBotApiServer {
     }
     const method = match[1];
 
-    // sendPhoto / sendDocument arrive as multipart/form-data: record the
-    // call WITHOUT parsing the binary body (checked before JSON.parse so a
-    // multipart payload can never crash the mock).
+    // sendPhoto arrives as multipart/form-data: extract chat_id + caption
+    // (latin1 keeps byte offsets aligned, so the caption slice converts
+    // back to utf8 exactly).
     if (req.headers['content-type']?.includes('multipart/form-data')) {
+      const lat = body.toString('latin1');
+      const extract = (field: string): string | undefined => {
+        const m = lat.match(new RegExp(`name="${field}"\\r\\n\\r\\n([\\s\\S]*?)\\r\\n--`));
+        if (!m || m[1] === undefined) return undefined;
+        const start = lat.indexOf(m[1]);
+        return body.slice(start, start + m[1].length).toString('utf8');
+      };
+      const chatId = Number(lat.match(/name="chat_id"\r\n\r\n(\d+)/)?.[1] ?? 0);
+      const caption = extract('caption');
+      let replyMarkup: unknown;
+      const rawMarkup = extract('reply_markup');
+      if (rawMarkup) {
+        try {
+          replyMarkup = JSON.parse(rawMarkup);
+        } catch {
+          replyMarkup = undefined;
+        }
+      }
       this.outgoing.push({
         method,
-        chat_id: 0,
-        payload: { multipart: true, contentType: req.headers['content-type'] },
+        chat_id: chatId,
+        text: caption,
+        payload: { multipart: true, contentType: req.headers['content-type'], reply_markup: replyMarkup },
       });
       res.end(JSON.stringify({ ok: true, result: { message_id: ++this.updateCounter } }));
       return;
     }
 
-    const payload = body ? JSON.parse(body) : {};
-    if (this.logRequests) console.error(`[mock-bot-api] ${method} ${body.slice(0, 120)}`);
+    const text = body.toString('utf8');
+    const payload = text ? JSON.parse(text) : {};
+    if (this.logRequests) console.error(`[mock-bot-api] ${method} ${text.slice(0, 120)}`);
 
     switch (method) {
       case 'getMe': {

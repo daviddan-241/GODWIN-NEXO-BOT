@@ -3,7 +3,8 @@
  * session middleware, command/callback routing and the dependency
  * container handed to handlers.
  */
-import { Bot, Context, InputFile } from 'grammy';
+import { Bot, Context } from 'grammy';
+import type { InlineKeyboard } from 'grammy';
 import type { Logger } from '../logging/logger';
 import type { AppConfig } from '../config/env';
 import type { Repos } from '../db/repos';
@@ -87,8 +88,11 @@ export interface BotServices {
   sessions: SessionStore;
   /** Sends a message to an arbitrary chat (wired to bot.api after construction). */
   sendToUser: (chatId: number, text: string) => Promise<unknown>;
-  /** Sends the NEXO logo photo to the current chat. */
-  sendLogo: (ctx: BotContext) => Promise<void>;
+  /**
+   * Sends the terminal as ONE message: the NEXO logo photo with the
+   * terminal text as its caption and the inline keyboard attached.
+   */
+  sendTerminal: (ctx: BotContext, caption: string, keyboard: InlineKeyboard) => Promise<void>;
 }
 
 export type BotContext = Context & { session: SessionData; services: BotServices };
@@ -256,4 +260,4 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   return bot;
 }
 
-export { InputFile };
+

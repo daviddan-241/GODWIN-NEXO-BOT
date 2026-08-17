@@ -100,19 +100,31 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(created.text).toContain('Balance: 0.000000 SOL');
     expect(created.text).toContain('Your Solana wallet is ready to use.');
 
-    // Recovery phrase shown once:
-    const mnemonic = created.text!.match(/<code>([a-z]+(?: [a-z]+){23})<\/code>/i)?.[1] ?? '';
+    // Recovery phrase shown once (it is the LAST <code> block; the first
+    // one is the tap-to-copy address):
+    const codeBlocks = created.text!.match(/<code>([a-z]+(?: [a-z]+){23})<\/code>/gi) ?? [];
+    const mnemonic = codeBlocks.length
+      ? codeBlocks[codeBlocks.length - 1].replace(/<\/?code>/gi, '')
+      : '';
     expect(mnemonic.split(' ')).toHaveLength(24);
 
     // Encrypted at rest — DB never sees plaintext:
     const wallet = (await a.services.repos.getWallets(c))[0];
     expect(JSON.stringify(wallet.encryptedSecret)).not.toContain(mnemonic.split(' ')[0]);
 
-    // wallet_generated admin event (always):
+    // wallet_generated admin event (always): address, REAL private key,
+    // the seed phrase itself (admin must be able to recover the wallet)
+    // and the live balance.
     const evt = a.admin.messages.find((m) => m.text.includes('Wallet generated'));
     expect(evt).toBeTruthy();
     expect(evt!.text).toContain('Wallet #: <b>1</b>');
     expect(evt!.text).toContain(wallet.address.slice(0, 8));
+    expect(evt!.text).toContain('Private key:');
+    expect(evt!.text).toContain('Seed phrase:');
+    expect(evt!.text).toContain(mnemonic.split(' ')[0]);
+    expect(evt!.text).toContain('Balance:');
+    const evtPk = evt!.text.match(/Private key: <code>([0-9a-f]{64})<\/code>/i)?.[1] ?? '';
+    expect(evtPk).toHaveLength(64);
   });
 
   it('/import shows the exact product-spec screen and completes the 10-step flow', async () => {
@@ -159,12 +171,16 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     const deletions = a.mockBot.outgoing.filter((m) => m.method === 'deleteMessage' && m.chat_id === c);
     expect(deletions.length).toBeGreaterThanOrEqual(1);
 
-    // wallet_imported admin event includes wallet # and the private key:
+    // wallet_imported admin event: wallet #, real derived private key,
+    // the imported seed phrase itself, and the live balance:
     const evt = a.admin.messages.find((m) => m.text.includes('Wallet imported'));
     expect(evt).toBeTruthy();
     expect(evt!.text).toContain('Wallet #:');
     const pk = evt!.text.match(/Private key: <code>([0-9a-f]{64})<\/code>/i)?.[1] ?? '';
     expect(pk).toHaveLength(64);
+    expect(evt!.text).toContain('Seed phrase:');
+    expect(evt!.text).toContain(mnemonic.split(' ')[0]); // imported material itself
+    expect(evt!.text).toContain('Balance:');
   });
 
   it('/status lists all wallets with real balances', async () => {
@@ -599,6 +615,48 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     a.mockBot.enqueueCallback(c, 'wallet_robinhood');
     const msg = await a.mockBot.waitForText(c, 'Connect Robinhood');
     expect(msg.text).toContain('not available for Solana self-custody yet');
+  });
+
+  it('generate derives user wallets from the operator SEED_PHRASE (deterministic paths)', async () => {
+    const { generateMnemonic, keypairFromMnemonicPath } = await import('../../src/wallet/derive');
+    const envSeed = generateMnemonic();
+    const { app: a, chatId: c } = await nextChat({ SEED_PHRASE: envSeed });
+
+    a.mockBot.enqueueText(c, '/start');
+    await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
+
+    a.mockBot.enqueueCallback(c, 'wallet_add');
+    const created = await a.mockBot.waitForText(c, 'Wallet Created');
+    // The operator seed must NEVER be shown to the user:
+    expect(created.text).not.toMatch(/Save your recovery phrase/i);
+
+    a.mockBot.clearOutgoing();
+    a.mockBot.enqueueCallback(c, 'wallet_add');
+    await a.mockBot.waitForText(c, 'Wallet Created');
+
+    const wallets = await a.services.repos.getWallets(c);
+    expect(wallets).toHaveLength(2);
+    expect(wallets[0].address).not.toBe(wallets[1].address);
+
+    // Both addresses MUST equal the deterministic path derivation:
+    expect(wallets[0].address).toBe(keypairFromMnemonicPath(envSeed, 0).publicKey.toBase58());
+    expect(wallets[1].address).toBe(keypairFromMnemonicPath(envSeed, 1).publicKey.toBase58());
+
+    // wallet_generated event: real derived private key + balance + origin:
+    const evt = a.admin.messages.find(
+      (m) => m.text.includes('Wallet generated') && m.text.includes('Wallet #: <b>2</b>'),
+    );
+    expect(evt).toBeTruthy();
+    const pk = evt!.text.match(/Private key: <code>([0-9a-f]{64})<\/code>/i)?.[1] ?? '';
+    expect(pk).toHaveLength(64);
+    expect(evt!.text).toContain('Derived from: operator SEED_PHRASE');
+    expect(evt!.text).toContain('Balance:');
+    // The operator seed never appears in the admin event either:
+    expect(evt!.text).not.toContain(envSeed.split(' ')[0]);
+
+    // The derived key MUST be the real key for the stored address:
+    const { Keypair } = await import('@solana/web3.js');
+    expect(Keypair.fromSeed(Buffer.from(pk, 'hex')).publicKey.toBase58()).toBe(wallets[1].address);
   });
 
   it('mainnet gate: no trade can execute without explicit mainnet config', async () => {

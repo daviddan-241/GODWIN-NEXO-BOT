@@ -10,7 +10,6 @@ exports.createApp = createApp;
  * them together. Tests reuse the same `createBot` with injected doubles.
  */
 const node_fs_1 = __importDefault(require("node:fs"));
-const node_path_1 = __importDefault(require("node:path"));
 const client_1 = require("./db/client");
 Object.defineProperty(exports, "createDatabase", { enumerable: true, get: function () { return client_1.createDatabase; } });
 const migrate_1 = require("./db/migrate");
@@ -29,19 +28,11 @@ const transport_1 = require("./admin/transport");
 const notifier_1 = require("./admin/notifier");
 const session_1 = require("./telegram/session");
 const bot_1 = require("./telegram/bot");
+const grammy_1 = require("grammy");
+const logo_1 = require("./telegram/logo");
 const server_1 = require("./health/server");
 const constants_1 = require("./config/constants");
 const messages_1 = require("./telegram/messages");
-function resolveLogoPath() {
-    const candidates = [
-        node_path_1.default.resolve(__dirname, '..', '..', 'assets', 'nexo_logo_clean.png'),
-        node_path_1.default.resolve(__dirname, '..', 'assets', 'nexo_logo_clean.png'),
-    ];
-    for (const c of candidates)
-        if (node_fs_1.default.existsSync(c))
-            return c;
-    return candidates[0];
-}
 function createApp(config, logger, database) {
     const repos = new repos_1.Repos(database.db);
     const solana = new client_2.ConnectionSolanaClient({
@@ -85,19 +76,28 @@ function createApp(config, logger, database) {
         sendToUser: async () => {
             throw new Error('sendToUser not wired yet');
         },
-        sendLogo: async () => {
-            // wired below, once the bot exists
+        sendTerminal: async (ctx, caption, keyboard) => {
+            const logo = (0, logo_1.resolveLogoPath)();
+            if (node_fs_1.default.existsSync(logo)) {
+                await ctx
+                    .replyWithPhoto(new grammy_1.InputFile(logo), {
+                    caption,
+                    parse_mode: 'HTML',
+                    reply_markup: keyboard,
+                })
+                    .catch(async (err) => {
+                    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'logo send failed; falling back to text');
+                    await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: keyboard });
+                });
+            }
+            else {
+                await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: keyboard });
+            }
         },
     };
     const bot = (0, bot_1.createBot)(services, config.BOT_TOKEN, config.telegramApiRoot);
     // Wire the broadcast/deposit paths to the real Bot API client.
     services.sendToUser = (chatId, text) => bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-    services.sendLogo = async (ctx) => {
-        const logo = resolveLogoPath();
-        if (node_fs_1.default.existsSync(logo)) {
-            await ctx.replyWithPhoto(new bot_1.InputFile(logo)).catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'logo send failed'));
-        }
-    };
     // USER deposit notification (DEPOSIT RECEIVED) via the real Bot API.
     deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol) => services.sendToUser(chatId, (0, messages_1.depositReceivedMessage)(address, amountSol, newBalanceSol)).then(() => undefined);
     // Bot readiness is established once at startup (getMe above); the health

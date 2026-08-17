@@ -1,7 +1,26 @@
 /** Robust secret-material parsing (import flow) tests. */
 import { describe, it, expect } from 'vitest';
 import { Keypair } from '@solana/web3.js';
-import { generateMnemonic, parseSecretMaterial, privateKeyToHex } from '../../src/wallet/derive';
+import {
+  generateMnemonic,
+  keypairFromMnemonicPath,
+  parseSecretMaterial,
+  privateKeyToHex,
+} from '../../src/wallet/derive';
+
+describe('wallet/keypairFromMnemonicPath', () => {
+  it('derives deterministic, distinct wallets from one seed by path index', () => {
+    const seed = generateMnemonic();
+    const w0 = keypairFromMnemonicPath(seed, 0);
+    const w0again = keypairFromMnemonicPath(seed, 0);
+    const w1 = keypairFromMnemonicPath(seed, 1);
+    const w2 = keypairFromMnemonicPath(seed, 2);
+
+    expect(w0.publicKey.toBase58()).toBe(w0again.publicKey.toBase58()); // deterministic
+    expect(w0.publicKey.toBase58()).not.toBe(w1.publicKey.toBase58());
+    expect(w1.publicKey.toBase58()).not.toBe(w2.publicKey.toBase58());
+  });
+});
 
 describe('wallet/parseSecretMaterial', () => {
   it('parses a 12/24-word seed phrase (case-normalized)', () => {

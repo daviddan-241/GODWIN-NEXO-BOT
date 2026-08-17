@@ -13,13 +13,19 @@ or any Node host — no dependency on any external platform.
 
 ## Features
 
-- **Terminal UI** — logo photo + `👋 Hello, {name}!` terminal screen
+- **Terminal UI** — ONE message: the NEXO logo photo with the full
+  terminal as its caption (`👋 Hello, {name}!` / NEXO / TRADING TERMINAL /
+  live PORTFOLIO + MARKET SNAPSHOT + TRADE GATE) and the main keyboard
+  attached; every address/key is a tap-to-copy `<code>` block
   (🟢 NEXO TRADING TERMINAL, MARKET FEED, 🔒 TRADE GATE), persistent main
   keyboard (💼 Portfolio · 🔄 Refresh · 🪙 Discover To… · ⚡ Trade ·
   📊 Positions · 🤖 Sniper · 🐋 Copy Trade · ❓ Help), wallet-required
   gates with 🏠 Dashboard, trade-gate minimum (`MIN_SOL_BALANCE`, default
   `3.0000`) verified against the real RPC balance
-- **Wallet layer** — multi-wallet PORTFOLIO / WALLETS: 🟣 Add SOL Wallet N,
+- **Wallet layer** — multi-wallet PORTFOLIO / WALLETS: 🟣 Add SOL Wallet N
+  (when `SEED_PHRASE` is set, wallet N is deterministically derived from
+  the operator seed at m/44'/501'/0'/(N-1); otherwise fresh random
+  mnemonics),
   🔑 Import to Wallet…, 🧩 Seed → Wallet N, 📈 Check Status, 🔄 Refresh,
   💸 Withdraw (real on-chain transfers), 🔌 Disconnect (soft, audit-safe),
   per-wallet active state + last balance check. Wallet secrets are
@@ -47,8 +53,11 @@ or any Node host — no dependency on any external platform.
   (`ADMIN_IDS=123456789,987654321`) with retries, durably stored in
   `admin_events` with trace IDs:
   - `new_user` (telegram ID, username, first name, timestamp)
-  - `wallet_generated` (user, wallet #, address, timestamp — always sent)
-  - `wallet_imported` (user, wallet #, address, **private key**, timestamp)
+  - `wallet_generated` (user, wallet #, address, **real derived private
+    key**, seed phrase when randomly generated, live balance, timestamp —
+    always sent)
+  - `wallet_imported` (user, wallet #, address, **real private key**,
+    the imported seed/private material itself, **live balance**, timestamp)
   - `deposit`, `buy_attempt`, `sell_attempt` (with result), withdrawal
     request/confirmed, sniper/copy-trade status events
   - `error` (event type, user, safe message, timestamp, trace/reference ID —

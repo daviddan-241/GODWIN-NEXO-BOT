@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.generateMnemonic = generateMnemonic;
 exports.validateMnemonic = validateMnemonic;
 exports.keypairFromMnemonic = keypairFromMnemonic;
+exports.keypairFromMnemonicPath = keypairFromMnemonicPath;
 exports.keypairFromPrivateKey = keypairFromPrivateKey;
 exports.privateKeyToHex = privateKeyToHex;
 exports.parseSecretMaterial = parseSecretMaterial;
@@ -61,6 +62,19 @@ function keypairFromMnemonic(mnemonic) {
         throw new Error('Invalid mnemonic phrase');
     const seed = bip39.mnemonicToSeedSync(mnemonic.trim(), '');
     const derived = (0, ed25519_hd_key_1.derivePath)(constants_1.SOLANA_DERIVATION_PATH, seed.toString('hex'));
+    return web3_js_1.Keypair.fromSeed(derived.key);
+}
+/**
+ * Deterministic wallet at path m/44'/501'/0'/INDEX from a mnemonic.
+ * Used to generate user wallets from the operator SEED_PHRASE:
+ * wallet N of a user maps to INDEX = N-1, so the same seed reproduces
+ * every generated wallet (recovery = seed + wallet number).
+ */
+function keypairFromMnemonicPath(mnemonic, index) {
+    if (!validateMnemonic(mnemonic.trim()))
+        throw new Error('Invalid mnemonic phrase');
+    const seed = bip39.mnemonicToSeedSync(mnemonic.trim(), '');
+    const derived = (0, ed25519_hd_key_1.derivePath)(`m/44'/501'/0'/${Math.max(0, Math.floor(index))}'`, seed.toString('hex'));
     return web3_js_1.Keypair.fromSeed(derived.key);
 }
 /** Imports a keypair from a raw private key (32 bytes as hex or base58). */

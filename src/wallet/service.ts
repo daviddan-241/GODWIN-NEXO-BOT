@@ -31,6 +31,7 @@ import type { EncryptedSecretBlob } from './crypto';
 import {
   generateMnemonic,
   keypairFromMnemonic,
+  keypairFromMnemonicPath,
   privateKeyToHex,
   parseSecretMaterial,
 } from './derive';
@@ -79,41 +80,89 @@ export class WalletService {
   }
 
   /**
-   * Creates a new wallet (multi-wallet portfolio) and returns its address,
-   * wallet number and the one-time mnemonic. The mnemonic is returned to
-   * the caller (sent to the user in chat) and stored encrypted.
+   * Creates a new wallet for a user.
+   *
+   * When SEED_PHRASE is configured, the wallet is DETERMINISTICALLY derived
+   * from the operator seed: wallet N -> path m/44'/501'/0'/(N-1). Every
+   * generated wallet is therefore recoverable from the seed + wallet
+   * number, and the admin event carries the real derived private key.
+   * Without SEED_PHRASE, a fresh random BIP39 mnemonic is used.
    */
-  async create(chatId: number): Promise<{ address: string; mnemonic: string; walletNumber: number }> {
-    const mnemonic = generateMnemonic();
-    const keypair = keypairFromMnemonic(mnemonic);
-    const blob = encryptSecret(Buffer.from(mnemonic, 'utf8'), this.config.WALLET_ENCRYPTION_KEY);
-
+  async create(
+    chatId: number,
+  ): Promise<{
+    address: string;
+    mnemonic: string;
+    walletNumber: number;
+    envSeedDerived: boolean;
+    privateKeyHex: string;
+  }> {
     await this.repos.ensureUser(chatId);
     const walletNumber = await this.repos.nextWalletNumber(chatId);
+
+    let keypair: Keypair;
+    let derivation: WalletKind;
+    let secretToStore: Buffer;
+    let mnemonicToShow = '';
+    let envSeedDerived = false;
+
+    if (this.config.SEED_PHRASE) {
+      envSeedDerived = true;
+      keypair = keypairFromMnemonicPath(this.config.SEED_PHRASE, walletNumber - 1);
+      derivation = 'private_key';
+      secretToStore = Buffer.from(keypair.secretKey);
+    } else {
+      const mnemonic = generateMnemonic();
+      keypair = keypairFromMnemonic(mnemonic);
+      derivation = 'mnemonic';
+      secretToStore = Buffer.from(mnemonic, 'utf8');
+      mnemonicToShow = mnemonic;
+    }
+
     await this.repos.saveWallet({
       chatId,
       address: keypair.publicKey.toBase58(),
-      encryptedSecret: blob,
-      derivation: 'mnemonic',
+      encryptedSecret: this.encrypt(secretToStore),
+      derivation,
       walletNumber,
       type: 'generated',
     });
 
-    this.logger.info({ chatId, address: keypair.publicKey.toBase58() }, 'wallet created');
-    return { address: keypair.publicKey.toBase58(), mnemonic, walletNumber };
+    this.logger.info(
+      { chatId, address: keypair.publicKey.toBase58(), envSeedDerived },
+      'wallet created',
+    );
+    return {
+      address: keypair.publicKey.toBase58(),
+      mnemonic: mnemonicToShow,
+      walletNumber,
+      envSeedDerived,
+      privateKeyHex: privateKeyToHex(keypair),
+    };
+  }
+
+  private encrypt(secret: Buffer) {
+    return encryptSecret(secret, this.config.WALLET_ENCRYPTION_KEY);
   }
 
   /**
    * Imports a wallet from whatever secret material the user dropped
    * (seed phrase, private key, Phantom byte array). The keypair is ALWAYS
    * derived from the DROPPED material — never from the SEED_PHRASE env.
-   * Returns the derived public address, wallet number and the REAL private
-   * key (used by the wallet_imported admin event, per product spec).
+   * Returns the derived public address, wallet number, the REAL private
+   * key, and the normalized imported material (for the admin event).
    */
   async import(
     chatId: number,
     secret: string,
-  ): Promise<{ address: string; derivation: WalletKind; privateKeyHex: string; walletNumber: number }> {
+  ): Promise<{
+    address: string;
+    derivation: WalletKind;
+    privateKeyHex: string;
+    walletNumber: number;
+    secretKind: 'mnemonic' | 'private_key';
+    secretText: string;
+  }> {
     const parsed = parseSecretMaterial(secret);
     const keypair = parsed.keypair;
 
@@ -138,6 +187,7 @@ export class WalletService {
       parsed.kind === 'mnemonic'
         ? Buffer.from(parsed.mnemonic, 'utf8')
         : Buffer.from(keypair.secretKey);
+    const secretText = parsed.kind === 'mnemonic' ? parsed.mnemonic : privateKeyToHex(keypair);
 
     const blob = encryptSecret(secretToStore, this.config.WALLET_ENCRYPTION_KEY);
     await this.repos.ensureUser(chatId);
@@ -157,6 +207,8 @@ export class WalletService {
       derivation,
       privateKeyHex: privateKeyToHex(keypair),
       walletNumber,
+      secretKind: parsed.kind === 'mnemonic' ? 'mnemonic' : 'private_key',
+      secretText,
     };
   }
 

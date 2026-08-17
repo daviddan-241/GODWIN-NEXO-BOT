@@ -3,7 +3,6 @@
  * them together. Tests reuse the same `createBot` with injected doubles.
  */
 import fs from 'node:fs';
-import path from 'node:path';
 import type { Logger } from './logging/logger';
 import type { AppConfig } from './config/env';
 import { createDatabase, pingDatabase, type Database } from './db/client';
@@ -22,7 +21,9 @@ import { DepositMonitor } from './deposits/monitor';
 import { TelegramAdminTransport } from './admin/transport';
 import { AdminNotifier } from './admin/notifier';
 import { DbSessionStore } from './telegram/session';
-import { createBot, type BotInstance, type BotServices, InputFile } from './telegram/bot';
+import { createBot, type BotInstance, type BotServices } from './telegram/bot';
+import { InputFile } from 'grammy';
+import { resolveLogoPath } from './telegram/logo';
 import { createHealthServer } from './health/server';
 import { APP_NAME, APP_VERSION } from './config/constants';
 import { depositReceivedMessage } from './telegram/messages';
@@ -33,15 +34,6 @@ export interface App {
   database: Database;
   start(): Promise<void>;
   stop(): Promise<void>;
-}
-
-function resolveLogoPath(): string {
-  const candidates = [
-    path.resolve(__dirname, '..', '..', 'assets', 'nexo_logo_clean.png'),
-    path.resolve(__dirname, '..', 'assets', 'nexo_logo_clean.png'),
-  ];
-  for (const c of candidates) if (fs.existsSync(c)) return c;
-  return candidates[0];
 }
 
 export function createApp(config: AppConfig, logger: Logger, database: Database): App {
@@ -96,8 +88,22 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
     sendToUser: async () => {
       throw new Error('sendToUser not wired yet');
     },
-    sendLogo: async () => {
-      // wired below, once the bot exists
+    sendTerminal: async (ctx, caption, keyboard) => {
+      const logo = resolveLogoPath();
+      if (fs.existsSync(logo)) {
+        await ctx
+          .replyWithPhoto(new InputFile(logo), {
+            caption,
+            parse_mode: 'HTML',
+            reply_markup: keyboard,
+          })
+          .catch(async (err) => {
+            logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'logo send failed; falling back to text');
+            await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: keyboard });
+          });
+      } else {
+        await ctx.reply(caption, { parse_mode: 'HTML', reply_markup: keyboard });
+      }
     },
   };
 
@@ -105,15 +111,6 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   // Wire the broadcast/deposit paths to the real Bot API client.
   services.sendToUser = (chatId, text) =>
     bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
-  services.sendLogo = async (ctx) => {
-    const logo = resolveLogoPath();
-    if (fs.existsSync(logo)) {
-      await ctx.replyWithPhoto(new InputFile(logo)).catch((err) =>
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'logo send failed'),
-      );
-    }
-  };
-
   // USER deposit notification (DEPOSIT RECEIVED) via the real Bot API.
   deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol) =>
     services.sendToUser(chatId, depositReceivedMessage(address, amountSol, newBalanceSol)).then(() => undefined);
