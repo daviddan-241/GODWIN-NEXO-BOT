@@ -6,7 +6,7 @@
 import { PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import type { SolanaClient, TokenAccountInfo, MintInfo, TxLike } from '../../src/solana/types';
 import type { PriceProvider, QuoteParams, QuoteResult, SwapBuildOptions, SwapProvider } from '../../src/market/types';
-import type { TokenSearchProvider, TokenInfo } from '../../src/market/dexscreener';
+import type { TokenSearchProvider, TokenInfo } from '../../src/market/token-resolver';
 import type { AdminTransport } from '../../src/admin/transport';
 import { WSOL_MINT } from '../../src/config/constants';
 
@@ -177,7 +177,10 @@ export class FakeTokenSearch implements TokenSearchProvider {
       buys24h: 1200,
       sells24h: 900,
       pairUrl: 'https://dexscreener.com/solana/fake',
-      riskLevel: 'LOW RISK 🟢',
+      riskLevel: 'LOW RISK',
+      riskScore: 810,
+      riskFlags: [],
+      flagDetails: [],
       ...overrides,
     };
   }

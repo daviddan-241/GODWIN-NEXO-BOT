@@ -71,6 +71,7 @@ function createBot(services, token, apiRoot) {
     bot.command('generate', (ctx) => (0, nexo_2.generateWalletHandler)(ctx));
     bot.command('import', (ctx) => (0, nexo_2.walletImportPromptHandler)(ctx));
     bot.command('status', (ctx) => (0, nexo_2.walletStatusHandler)(ctx));
+    bot.command('disconnect', (ctx) => (0, nexo_2.walletDisconnectHandler)(ctx));
     bot.command('help', (ctx) => (0, nexo_2.helpHandler)(ctx));
     bot.command('discover', (ctx) => (0, nexo_2.discoverHandler)(ctx));
     bot.command('cancel', (ctx) => (0, nexo_2.cancelHandler)(ctx));

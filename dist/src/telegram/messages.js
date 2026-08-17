@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.chooseWalletPromptMessage = exports.robinhoodUnavailableMessage = exports.sellTokenPromptMessage = exports.buyTokenPromptMessage = exports.copyLimitsStepMessage = exports.configureTargetWalletMessage = exports.configStopLossMessage = exports.configTakeProfitMessage = exports.configPriorityMessage = exports.configSlippageMessage = exports.configDevHoldMessage = exports.configPositionSizeMessage = exports.twitterUrl = exports.websiteUrl = exports.supportUsername = void 0;
+exports.chooseWalletPromptMessage = exports.robinhoodUnavailableMessage = exports.sellTokenPromptMessage = exports.buyTokenPromptMessage = exports.copyLimitsStepMessage = exports.configureTargetWalletMessage = exports.searchingMessage = exports.configStopLossMessage = exports.configTakeProfitMessage = exports.configPriorityMessage = exports.configSlippageMessage = exports.configDevHoldMessage = exports.configPositionSizeMessage = exports.twitterUrl = exports.websiteUrl = exports.supportUsername = void 0;
+exports.terminalMessage = terminalMessage;
 exports.startMessage = startMessage;
 exports.dashboardMessage = dashboardMessage;
 exports.discoverTokensMessage = discoverTokensMessage;
@@ -42,24 +43,53 @@ const formatters_1 = require("./formatters");
 exports.supportUsername = (process.env.SUPPORT_USERNAME || 'ainexobotsupport').replace(/^@/, '');
 exports.websiteUrl = process.env.WEBSITE_URL || 'https://t.co/z1XgC7Zd6d';
 exports.twitterUrl = process.env.TWITTER_URL || 'https://x.com/Nexo?s=20';
-// === START / WELCOME (exact v2 spec) ===
-function startMessage(firstName, minimum) {
-    return `👋 Hello, ${firstName}!\n\n🟢 NEXO TRADING TERMINAL\nMARKET FEED: CONNECTED\n\nFeatures:\n• Discover trending memecoins\n• Review liquidity and volume\n• Scan contract risk signals\n• Track positions and exits\n\n🔒 TRADE GATE: Wallet + balance check\n✏️ Minimum: ${minimum} SOL minimum\n👉 Connect a wallet to get started.`;
+function marketLine(symbol, price, change) {
+    const arrow = change >= 0 ? '▲' : '▼';
+    const circle = change >= 0 ? '🟢' : '🔴';
+    return `${circle} ${symbol} $${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${arrow} ${Math.abs(change).toFixed(2)}%`;
 }
-// === DASHBOARD (wallet connected) ===
-function dashboardMessage(wallets, solPrice, minimum) {
-    let walletText = '';
-    let totalBalanceSol = 0;
-    for (let i = 0; i < wallets.length; i++) {
-        const w = wallets[i];
-        totalBalanceSol += w.balance;
-        walletText += `Wallet ${i + 1}: ${w.balance.toFixed(6)} SOL ($${(w.balance * solPrice).toFixed(2)})\n`;
-        walletText += `${w.address}\n`;
-    }
+function terminalMessage(firstName, wallets, market, solPrice, minimum) {
+    const lines = [];
+    lines.push(`👋 Hello, ${firstName}!`);
+    lines.push('');
+    lines.push('NEXO / TRADING TERMINAL');
+    lines.push('');
+    lines.push(`PORTFOLIO (${wallets.length} wallet${wallets.length === 1 ? '' : 's'})`);
+    let totalSol = 0;
+    for (const w of wallets)
+        totalSol += w.balance;
+    lines.push(`Total tracked value: $${(totalSol * solPrice).toFixed(2)}`);
+    lines.push('');
     if (wallets.length === 0) {
-        walletText = 'No wallet connected.\nConnect a wallet to get started.';
+        lines.push('No wallets connected.');
+        lines.push('');
     }
-    return `🟢 NEXO TRADING TERMINAL\n\nMARKET FEED: CONNECTED\nDiscover trending memecoins\nReview liquidity and volume\nScan contract risk signals\nTrack positions and exits\n\n🔒 TRADE GATE: Wallet + balance check\n✏️ Minimum: ${minimum} SOL minimum\n\nYOUR PORTFOLIO\n${walletText}\nTotal Balance: ${totalBalanceSol.toFixed(6)} SOL ($${(totalBalanceSol * solPrice).toFixed(2)})`;
+    else {
+        for (let i = 0; i < wallets.length; i++) {
+            const w = wallets[i];
+            lines.push(`🟢 SOL Wallet ${i + 1}: ${w.balance.toFixed(6)} SOL ($${(w.balance * solPrice).toFixed(2)})`);
+            lines.push(`${w.address}`);
+            lines.push('');
+        }
+    }
+    lines.push('MARKET SNAPSHOT');
+    lines.push(marketLine('SOL', market.SOL.price, market.SOL.change));
+    lines.push(marketLine('ETH', market.ETH.price, market.ETH.change));
+    lines.push(marketLine('BNB', market.BNB.price, market.BNB.change));
+    lines.push('');
+    lines.push('🔒 TRADE GATE');
+    lines.push('Wallet + balance check required before buy/sell');
+    lines.push(`Minimum balance: ${minimum} SOL`);
+    lines.push('');
+    lines.push('Review the token. Confirm the order. Track the exit.');
+    return lines.join('\n');
+}
+/** No-wallet variant = same terminal with an empty portfolio. */
+function startMessage(firstName, minimum) {
+    return terminalMessage(firstName, [], { SOL: { price: 0, change: 0 }, ETH: { price: 0, change: 0 }, BNB: { price: 0, change: 0 } }, 0, minimum);
+}
+function dashboardMessage(wallets, market, solPrice, minimum) {
+    return terminalMessage('', wallets, market, solPrice, minimum);
 }
 // === DISCOVER TOKENS (exact v2 spec) ===
 function discoverTokensMessage() {
@@ -94,7 +124,7 @@ function positionsMessage(positions) {
 }
 // === HELP / CONTROL CENTER (exact v2 spec) ===
 function helpMessage() {
-    return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\n🔐 Non-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n/start — Open terminal\n/wallet — Manage portfolio wallets\n/generate — Create a new wallet\n/import — Import an existing wallet\n/status — Check wallet status\n\nLinks\nWebsite:\n${exports.websiteUrl}\nTwitter:\n${exports.twitterUrl}\n\nSupport:\neg. (@${exports.supportUsername})\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
+    return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\n🔐 Non-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n/start — Open trading terminal\n/wallet — Manage portfolio\n/status — Check wallet status\n/generate — Connect SOL wallet\n/import — Import wallet\n/disconnect — Disconnect wallet\n/help — Open control center\n\nLinks\nWebsite:\n${exports.websiteUrl}\nTwitter:\n${exports.twitterUrl}\n\nSupport:\neg. (@${exports.supportUsername})\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
 }
 // === PORTFOLIO / WALLETS (exact v2 spec) ===
 function walletManagementMessage(wallets, solPrice) {
@@ -145,8 +175,10 @@ exports.configTakeProfitMessage = configTakeProfitMessage;
 const configStopLossMessage = () => `Set Stop Loss\n\nAutomatically sell to protect capital when loss reaches this percentage.\n\nRange: 10-90%\nRecommended: 30% (Protects 70%)\nExamples:\n- 20% (Conservative)\n- 30% (Balanced)\n- 50% (Aggressive)\n\nSend your stop loss percentage:`;
 exports.configStopLossMessage = configStopLossMessage;
 // === TOKEN ===
+const searchingMessage = () => `⚡ Searching and scanning for risks...`;
+exports.searchingMessage = searchingMessage;
 function tokenNotFoundMessage() {
-    return `Token Not Found\n\nThe token you searched for could not be found on Solana DEX.\n\nPlease try again with a different search term or contract address.`;
+    return `Token Not Found\n\nThe token you searched for could not be found on Solana (checked DexScreener, Jupiter, Raydium, Birdeye and CoinGecko).\n\nPlease try again with a different search term or contract address.`;
 }
 // === WITHDRAWAL ===
 function withdrawalMessage(balance) {

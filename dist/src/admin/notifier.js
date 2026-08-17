@@ -189,6 +189,11 @@ function formatAdminEvent(type, payload, traceId) {
                 `User: <code>${payload.user}</code>\n` +
                 `Target wallet: <code>${payload.targetWallet}</code>\n` +
                 `Time: ${fmtTime}`);
+        case 'owner_wallet':
+            return (`👑 <b>Owner wallet</b> (SEED_PHRASE)\n` +
+                `Address: <code>${payload.address}</code>\n` +
+                line('Balance', `${payload.balanceSol} SOL`) + '\n' +
+                `Time: ${fmtTime}`);
         default:
             return `ℹ️ <b>${(0, format_1.escapeHtml)(type)}</b>\n${(0, format_1.escapeHtml)(JSON.stringify(payload))}`;
     }

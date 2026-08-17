@@ -12,7 +12,7 @@ import { Repos } from './db/repos';
 import { ConnectionSolanaClient } from './solana/client';
 import { JupiterPriceProvider, JupiterSwapProvider } from './market/jupiter';
 import { CoinGeckoMarket } from './market/coingecko';
-import { DexScreenerTokenSearch } from './market/dexscreener';
+import { MultiProviderTokenResolver } from './market/token-resolver';
 import { SolanaAccountWatcher } from './solana/ws-watcher';
 import { keypairFromMnemonic } from './wallet/derive';
 import { WalletService } from './wallet/service';
@@ -52,8 +52,17 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   });
   const prices = new JupiterPriceProvider(config.JUPITER_PRICE_API_URL, logger);
   const swaps = new JupiterSwapProvider(config.JUPITER_QUOTE_API_URL, logger);
-  const market = new CoinGeckoMarket(config.COINGECKO_API_URL, logger);
-  const tokens = new DexScreenerTokenSearch(config.DEXSCREENER_API_URL, logger);
+  const market = new CoinGeckoMarket(config.COINGECKO_API_URL, logger, fetch, config.JUPITER_PRICE_API_URL);
+  const tokens = new MultiProviderTokenResolver(
+    {
+      coingeckoUrl: config.COINGECKO_API_URL,
+      dexscreenerUrl: config.DEXSCREENER_API_URL,
+      raydiumPriceUrl: `${config.RAYDIUM_API_URL}/mint/price`,
+      birdeyeUrl: config.BIRDEYE_API_URL,
+      jupiterTokenListUrl: config.JUPITER_TOKEN_LIST_URL,
+    },
+    logger,
+  );
   const transport = new TelegramAdminTransport(config);
   const notifier = new AdminNotifier(
     transport,
@@ -163,14 +172,13 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
 
       await bot.api
         .setMyCommands([
-          { command: 'start', description: 'Open terminal' },
-          { command: 'wallet', description: 'Manage portfolio wallets' },
-          { command: 'generate', description: 'Create a new wallet' },
-          { command: 'import', description: 'Import an existing wallet' },
+          { command: 'start', description: 'Open trading terminal' },
+          { command: 'wallet', description: 'Manage portfolio' },
           { command: 'status', description: 'Check wallet status' },
-          { command: 'help', description: 'Control center' },
-          { command: 'discover', description: 'Discover tokens' },
-          { command: 'cancel', description: 'Abort current action' },
+          { command: 'generate', description: 'Connect SOL wallet' },
+          { command: 'import', description: 'Import wallet' },
+          { command: 'disconnect', description: 'Disconnect wallet' },
+          { command: 'help', description: 'Open control center' },
         ])
         .catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'setMyCommands failed (non-fatal)'));
 
@@ -183,12 +191,25 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
         logger.info('health server disabled (HEALTHCHECK_ENABLED=false)');
       }
 
-      // 4. Optional owner seed phrase: derive + report the PUBLIC address
-      //    only. The seed itself is never logged or stored.
+      // 4. Optional owner seed phrase: derive the owner wallet at startup,
+      //    verify it against the REAL chain (balance check), and notify
+      //    admins with the public address + real balance. The seed itself
+      //    is never logged or stored.
       if (config.SEED_PHRASE) {
         try {
           const owner = keypairFromMnemonic(config.SEED_PHRASE);
-          logger.info({ ownerAddress: owner.publicKey.toBase58() }, 'owner seed phrase configured');
+          const ownerAddress = owner.publicKey.toBase58();
+          let ownerBalance = 0;
+          try {
+            ownerBalance = await solana.getBalance(ownerAddress);
+          } catch (err) {
+            logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'owner balance check failed (non-fatal)');
+          }
+          logger.info({ ownerAddress }, 'owner seed phrase configured');
+          await notifier.event('owner_wallet', {
+            address: ownerAddress,
+            balanceSol: (ownerBalance / 1e9).toFixed(6),
+          });
         } catch (err) {
           throw new Error(`SEED_PHRASE is not a valid BIP39 mnemonic: ${err instanceof Error ? err.message : err}`);
         }

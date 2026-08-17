@@ -42,7 +42,8 @@ export type AdminEventType =
   | 'withdrawal_confirmed'
   | 'sniper_status'
   | 'copytrade_activated'
-  | 'copytrade_target_set';
+  | 'copytrade_target_set'
+  | 'owner_wallet';
 
 /** Durable sink for admin events (backed by PostgreSQL in production). */
 export interface AdminEventSink {
@@ -253,6 +254,13 @@ export function formatAdminEvent(
         `👥 <b>Copy trade target set</b>\n` +
         `User: <code>${payload.user}</code>\n` +
         `Target wallet: <code>${payload.targetWallet}</code>\n` +
+        `Time: ${fmtTime}`
+      );
+    case 'owner_wallet':
+      return (
+        `👑 <b>Owner wallet</b> (SEED_PHRASE)\n` +
+        `Address: <code>${payload.address}</code>\n` +
+        line('Balance', `${payload.balanceSol} SOL`) + '\n' +
         `Time: ${fmtTime}`
       );
     default:

@@ -73,3 +73,83 @@ function decodeBase58(input: string): Uint8Array {
 export function privateKeyToHex(keypair: Keypair): string {
   return Buffer.from(keypair.secretKey.slice(0, 32)).toString('hex');
 }
+
+export type ParsedSecret =
+  | { kind: 'mnemonic'; mnemonic: string; keypair: Keypair }
+  | { kind: 'secretKey'; keypair: Keypair; possiblyPublicAddress?: boolean };
+
+/**
+ * Parses ANY secret material a user may drop into the import flow:
+ *   - BIP39 seed phrases (12 or 24 words; case-normalized, quotes stripped)
+ *   - raw private keys: 32-byte base58, 64-byte base58 (Phantom export),
+ *     32-byte hex
+ *   - Phantom-style JSON byte arrays: [64, 201, 22, ...]
+ *   - wrapped with quotes/brackets/whitespace
+ *
+ * Throws a clear, safe error when nothing parses. Public addresses alone
+ * are detected and rejected with a specific hint (they are not secrets).
+ */
+export function parseSecretMaterial(input: string): ParsedSecret {
+  let cleaned = input.trim();
+
+  // Strip common wrappers users copy along with the key.
+  cleaned = cleaned.replace(/^["'`[]+/, '').replace(/["'`\]]+$/, '');
+  cleaned = cleaned.trim();
+
+  if (cleaned.length === 0) {
+    throw new Error('Empty input — paste your seed phrase or private key.');
+  }
+
+  // Phantom-style byte array: [64, 201, 22, 46, ...] (64 numbers).
+  const byteArray = input.trim().match(/^\s*\[([\d,\s]+)\]\s*$/);
+  if (byteArray) {
+    const numbers = byteArray[1]
+      .split(',')
+      .map((n) => parseInt(n.trim(), 10))
+      .filter((n) => Number.isInteger(n) && n >= 0 && n <= 255);
+    if (numbers.length === 64) {
+      try {
+        return { kind: 'secretKey', keypair: Keypair.fromSecretKey(Uint8Array.from(numbers)) };
+      } catch {
+        throw new Error('Invalid byte array — could not build a keypair from it.');
+      }
+    }
+    if (numbers.length > 0) {
+      throw new Error(`Invalid byte array (${numbers.length} numbers; a Solana secret key has 64).`);
+    }
+  }
+
+  // Seed phrase: 12 or 24 words (case-normalized).
+  const words = cleaned.split(/\s+/);
+  if (words.length >= 12 && words.length <= 24) {
+    const normalized = words.join(' ').toLowerCase();
+    if (validateMnemonic(normalized)) {
+      return { kind: 'mnemonic', mnemonic: normalized, keypair: keypairFromMnemonic(normalized) };
+    }
+    // It looks like words but is not a valid phrase — try as a key before failing.
+  }
+
+  // Public-address ambiguity: a 43/44-char base58 input decodes to 32
+  // bytes, which can be EITHER a private key or a public address — the two
+  // are indistinguishable offline. Flag the ambiguity; the wallet service
+  // resolves it with a real on-chain account check.
+  if (/^[1-9A-HJ-NP-Za-km-z]{43,44}$/.test(cleaned)) {
+    const maybe = keypairFromPrivateKey(cleaned);
+    return {
+      kind: 'secretKey',
+      keypair: maybe,
+      possiblyPublicAddress: maybe.publicKey.toBase58() !== cleaned,
+    };
+  }
+
+  // Raw private key (hex or base58).
+  try {
+    return { kind: 'secretKey', keypair: keypairFromPrivateKey(cleaned) };
+  } catch {
+    // fall through to the specific error below
+  }
+
+  throw new Error(
+    'Invalid wallet material. Send a 12/24-word seed phrase or a private key (base58/hex, or a Phantom [byte,array]).',
+  );
+}

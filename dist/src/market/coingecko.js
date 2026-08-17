@@ -13,12 +13,16 @@ class CoinGeckoMarket {
     apiUrl;
     logger;
     fetchFn;
+    jupiterPriceUrl;
     cache = null;
     cacheTtlMs = 60_000;
-    constructor(apiUrl, logger, fetchFn = fetch) {
+    constructor(apiUrl, logger, fetchFn = fetch, 
+    /** Fallback: Jupiter price API (SOL at minimum) when CoinGecko is rate-limited. */
+    jupiterPriceUrl = 'https://api.jup.ag/price/v2') {
         this.apiUrl = apiUrl;
         this.logger = logger;
         this.fetchFn = fetchFn;
+        this.jupiterPriceUrl = jupiterPriceUrl;
     }
     async getMarketPrices() {
         const now = Date.now();
@@ -44,6 +48,29 @@ class CoinGeckoMarket {
         }
         catch (err) {
             this.logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'coingecko fetch failed');
+            // Fallback: real SOL price from the Jupiter price API (ETH/BNB show
+            // 0 when unavailable — the terminal renders them as-is).
+            const fallback = await this.jupiterFallback();
+            this.cache = { data: fallback, at: now };
+            return fallback;
+        }
+    }
+    async jupiterFallback() {
+        try {
+            const res = await this.fetchFn(`${this.jupiterPriceUrl}?ids=SOL`);
+            if (!res.ok)
+                throw new Error(`Jupiter price HTTP ${res.status}`);
+            const body = (await res.json());
+            const sol = parseFloat(body.data?.SOL?.price ?? '0');
+            if (!Number.isFinite(sol))
+                throw new Error('Jupiter SOL price missing');
+            return {
+                SOL: { price: sol, change: 0 },
+                ETH: { price: 0, change: 0 },
+                BNB: { price: 0, change: 0 },
+            };
+        }
+        catch {
             return this.cache?.data ?? EMPTY_PRICES;
         }
     }

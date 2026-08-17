@@ -81,6 +81,9 @@ DATABASE_URL=
 # --------------------------------------------------------------------------
 COINGECKO_API_URL=https://api.coingecko.com/api/v3
 DEXSCREENER_API_URL=https://api.dexscreener.com
+RAYDIUM_API_URL=https://api-v3.raydium.io
+BIRDEYE_API_URL=https://public-api.birdeye.com
+JUPITER_TOKEN_LIST_URL=https://token.jup.ag/strict
 JUPITER_QUOTE_API_URL=https://quote-api.jup.ag/v6
 JUPITER_PRICE_API_URL=https://api.jup.ag/price/v2
 

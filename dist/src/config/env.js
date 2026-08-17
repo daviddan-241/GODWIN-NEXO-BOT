@@ -39,9 +39,12 @@ const EnvSchema = zod_1.z
     MIN_SOL_BALANCE: zod_1.z.string().regex(/^\d+(\.\d+)?$/, 'MIN_SOL_BALANCE must be a number').optional(),
     /** Backwards-compatible alias of MIN_SOL_BALANCE. */
     MINIMUM_SOL: zod_1.z.string().regex(/^\d+(\.\d+)?$/, 'MINIMUM_SOL must be a number').optional(),
-    /** Market data APIs. */
+    /** Market data APIs (multi-provider token search). */
     COINGECKO_API_URL: zod_1.z.string().url().default('https://api.coingecko.com/api/v3'),
     DEXSCREENER_API_URL: zod_1.z.string().url().default('https://api.dexscreener.com'),
+    RAYDIUM_API_URL: zod_1.z.string().url().default('https://api-v3.raydium.io'),
+    BIRDEYE_API_URL: zod_1.z.string().url().default('https://public-api.birdeye.com'),
+    JUPITER_TOKEN_LIST_URL: zod_1.z.string().url().default('https://token.jup.ag/strict'),
     /** Optional WebSocket endpoint for account-change driven deposit checks. */
     SOLANA_WS_URL: zod_1.z.string().url('SOLANA_WS_URL must be a valid URL').optional(),
     /** Optional owner seed phrase: derived at startup, address logged only. */

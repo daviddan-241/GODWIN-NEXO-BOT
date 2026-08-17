@@ -45,7 +45,7 @@ const web3_js_1 = require("@solana/web3.js");
 const common_1 = require("./common");
 const msg = __importStar(require("../messages"));
 const kb = __importStar(require("../keyboards"));
-const dexscreener_1 = require("../../market/dexscreener");
+const token_resolver_1 = require("../../market/token-resolver");
 const constants_1 = require("../../config/constants");
 const format_1 = require("../../util/format");
 // ---------------------------------------------------------------------------
@@ -72,16 +72,8 @@ function minimumSolNum(ctx) {
 }
 async function dashboard(ctx, opts = {}) {
     const wallets = await walletsWithBalances(ctx);
-    const solPrice = (await ctx.services.market.getMarketPrices()).SOL.price;
-    if (wallets.length === 0) {
-        const text = msg.startMessage(ctx.from?.first_name || 'trader', minimumSol(ctx));
-        if (opts.edit)
-            await ctx.editMessageText(text, { reply_markup: kb.dashboardKeyboard() }).catch(() => ctx.reply(text, { reply_markup: kb.dashboardKeyboard() }));
-        else
-            await ctx.reply(text, { reply_markup: kb.dashboardKeyboard() });
-        return;
-    }
-    const text = msg.dashboardMessage(wallets, solPrice, minimumSol(ctx));
+    const marketPrices = await ctx.services.market.getMarketPrices();
+    const text = msg.terminalMessage(ctx.from?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price, minimumSol(ctx));
     if (opts.edit)
         await ctx.editMessageText(text, { reply_markup: kb.dashboardKeyboard() }).catch(() => ctx.reply(text, { reply_markup: kb.dashboardKeyboard() }));
     else
@@ -111,7 +103,9 @@ exports.startHandler = (0, common_1.safeHandler)('nexo.start', async (ctx) => {
     await (0, common_1.resetToIdle)(ctx);
     // NEXO logo photo + terminal welcome.
     await ctx.services.sendLogo(ctx).catch(() => undefined);
-    await ctx.reply(msg.startMessage(user?.first_name || 'trader', minimumSol(ctx)), { reply_markup: kb.dashboardKeyboard() });
+    const wallets = await walletsWithBalances(ctx);
+    const marketPrices = await ctx.services.market.getMarketPrices();
+    await ctx.reply(msg.terminalMessage(user?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price, minimumSol(ctx)), { reply_markup: kb.dashboardKeyboard() });
     ctx.services.logger.info({ chatId, isNew }, 'user started bot');
 });
 exports.dashboardHandler = (0, common_1.safeHandler)('nexo.dashboard', async (ctx) => {
@@ -435,14 +429,18 @@ exports.searchTokenHandler = (0, common_1.safeHandler)('nexo.discover.search', a
     const text = ctx.message?.text?.trim();
     if (!text)
         return;
-    await ctx.reply('Searching...');
+    await ctx.reply(msg.searchingMessage());
     const token = await lookupToken(ctx, text);
     if (!token) {
         await ctx.reply(msg.tokenNotFoundMessage(), { reply_markup: kb.cancelButton() });
         return;
     }
     await (0, common_1.resetToIdle)(ctx);
-    await ctx.reply((0, dexscreener_1.formatTokenInfo)(token), { reply_markup: kb.tokenSearchKeyboard(token.address) });
+    await ctx.reply((0, token_resolver_1.formatTokenInfo)(token), {
+        parse_mode: 'HTML',
+        link_preview_options: { is_disabled: true },
+        reply_markup: kb.tokenSearchKeyboard(token.address),
+    });
 });
 // ---------------------------------------------------------------------------
 // Buy flow (real Jupiter swap)
@@ -471,7 +469,7 @@ exports.buyFromTradeHandler = (0, common_1.safeHandler)('nexo.buy.fromTrade', as
     const text = ctx.message?.text?.trim();
     if (!text)
         return;
-    await ctx.reply('Looking up token...');
+    await ctx.reply(msg.searchingMessage());
     const token = await lookupToken(ctx, text);
     if (!token) {
         await ctx.reply('Token not found. Please check the address.', { reply_markup: kb.cancelButton() });
@@ -566,7 +564,7 @@ exports.sellFromTradeHandler = (0, common_1.safeHandler)('nexo.sell.fromTrade', 
     const text = ctx.message?.text?.trim();
     if (!text)
         return;
-    await ctx.reply('Looking up token...');
+    await ctx.reply(msg.searchingMessage());
     const token = await lookupToken(ctx, text);
     if (!token) {
         await ctx.reply('Token not found.', { reply_markup: kb.cancelButton() });

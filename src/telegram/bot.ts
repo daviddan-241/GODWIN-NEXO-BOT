@@ -10,7 +10,7 @@ import type { Repos } from '../db/repos';
 import type { SolanaClient } from '../solana/types';
 import type { PriceProvider, SwapProvider } from '../market/types';
 import type { CoinGeckoMarket } from '../market/coingecko';
-import type { TokenSearchProvider } from '../market/dexscreener';
+import type { TokenSearchProvider } from '../market/token-resolver';
 import type { WalletService } from '../wallet/service';
 import type { TradingExecutor } from '../trading/executor';
 import type { PortfolioService } from '../portfolio/service';
@@ -164,6 +164,7 @@ export function createBot(services: BotServices, token: string, apiRoot?: string
   bot.command('generate', (ctx) => generateWalletHandler(ctx));
   bot.command('import', (ctx) => walletImportPromptHandler(ctx));
   bot.command('status', (ctx) => walletStatusHandler(ctx));
+  bot.command('disconnect', (ctx) => walletDisconnectHandler(ctx));
   bot.command('help', (ctx) => helpHandler(ctx));
   bot.command('discover', (ctx) => discoverHandler(ctx));
   bot.command('cancel', (ctx) => cancelHandler(ctx));

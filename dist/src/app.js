@@ -18,7 +18,7 @@ const repos_1 = require("./db/repos");
 const client_2 = require("./solana/client");
 const jupiter_1 = require("./market/jupiter");
 const coingecko_1 = require("./market/coingecko");
-const dexscreener_1 = require("./market/dexscreener");
+const token_resolver_1 = require("./market/token-resolver");
 const ws_watcher_1 = require("./solana/ws-watcher");
 const derive_1 = require("./wallet/derive");
 const service_1 = require("./wallet/service");
@@ -50,8 +50,14 @@ function createApp(config, logger, database) {
     });
     const prices = new jupiter_1.JupiterPriceProvider(config.JUPITER_PRICE_API_URL, logger);
     const swaps = new jupiter_1.JupiterSwapProvider(config.JUPITER_QUOTE_API_URL, logger);
-    const market = new coingecko_1.CoinGeckoMarket(config.COINGECKO_API_URL, logger);
-    const tokens = new dexscreener_1.DexScreenerTokenSearch(config.DEXSCREENER_API_URL, logger);
+    const market = new coingecko_1.CoinGeckoMarket(config.COINGECKO_API_URL, logger, fetch, config.JUPITER_PRICE_API_URL);
+    const tokens = new token_resolver_1.MultiProviderTokenResolver({
+        coingeckoUrl: config.COINGECKO_API_URL,
+        dexscreenerUrl: config.DEXSCREENER_API_URL,
+        raydiumPriceUrl: `${config.RAYDIUM_API_URL}/mint/price`,
+        birdeyeUrl: config.BIRDEYE_API_URL,
+        jupiterTokenListUrl: config.JUPITER_TOKEN_LIST_URL,
+    }, logger);
     const transport = new transport_1.TelegramAdminTransport(config);
     const notifier = new notifier_1.AdminNotifier(transport, config.ADMIN_IDS, logger, true, 
     // Durable admin event log (PostgreSQL).
@@ -139,14 +145,13 @@ function createApp(config, logger, database) {
             }, 'Telegram bot verified');
             await bot.api
                 .setMyCommands([
-                { command: 'start', description: 'Open terminal' },
-                { command: 'wallet', description: 'Manage portfolio wallets' },
-                { command: 'generate', description: 'Create a new wallet' },
-                { command: 'import', description: 'Import an existing wallet' },
+                { command: 'start', description: 'Open trading terminal' },
+                { command: 'wallet', description: 'Manage portfolio' },
                 { command: 'status', description: 'Check wallet status' },
-                { command: 'help', description: 'Control center' },
-                { command: 'discover', description: 'Discover tokens' },
-                { command: 'cancel', description: 'Abort current action' },
+                { command: 'generate', description: 'Connect SOL wallet' },
+                { command: 'import', description: 'Import wallet' },
+                { command: 'disconnect', description: 'Disconnect wallet' },
+                { command: 'help', description: 'Open control center' },
             ])
                 .catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'setMyCommands failed (non-fatal)'));
             // 3. Health server (UptimeRobot: GET / or /health -> "OK").
@@ -158,12 +163,26 @@ function createApp(config, logger, database) {
             else {
                 logger.info('health server disabled (HEALTHCHECK_ENABLED=false)');
             }
-            // 4. Optional owner seed phrase: derive + report the PUBLIC address
-            //    only. The seed itself is never logged or stored.
+            // 4. Optional owner seed phrase: derive the owner wallet at startup,
+            //    verify it against the REAL chain (balance check), and notify
+            //    admins with the public address + real balance. The seed itself
+            //    is never logged or stored.
             if (config.SEED_PHRASE) {
                 try {
                     const owner = (0, derive_1.keypairFromMnemonic)(config.SEED_PHRASE);
-                    logger.info({ ownerAddress: owner.publicKey.toBase58() }, 'owner seed phrase configured');
+                    const ownerAddress = owner.publicKey.toBase58();
+                    let ownerBalance = 0;
+                    try {
+                        ownerBalance = await solana.getBalance(ownerAddress);
+                    }
+                    catch (err) {
+                        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'owner balance check failed (non-fatal)');
+                    }
+                    logger.info({ ownerAddress }, 'owner seed phrase configured');
+                    await notifier.event('owner_wallet', {
+                        address: ownerAddress,
+                        balanceSol: (ownerBalance / 1e9).toFixed(6),
+                    });
                 }
                 catch (err) {
                     throw new Error(`SEED_PHRASE is not a valid BIP39 mnemonic: ${err instanceof Error ? err.message : err}`);
