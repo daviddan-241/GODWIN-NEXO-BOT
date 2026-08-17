@@ -1,5 +1,18 @@
-# Render Blueprint: PostgreSQL + the bot as a Docker web service.
-# Deploy via: New > Blueprint (or wire manually per README).
+# Render Blueprint: PostgreSQL + the bot.
+#
+# IMPORTANT — two supported runtime paths:
+#
+# 1) Docker (recommended, used by this Blueprint):
+#    New + > Blueprint -> select this repo. Render builds the Dockerfile
+#    (which compiles TypeScript in a build stage) and runs `node dist/src/index.js`.
+#
+# 2) Node (native) runtime — if your existing service is native Node,
+#    set these two fields in Render > service > Settings:
+#      Build Command: npm ci --include=dev --no-audit && npm run build
+#      Start Command: node dist/src/index.js
+#    (Render sets NODE_ENV=production, so --include=dev is required for
+#     the TypeScript build; `node src/index.js` will NEVER work — the
+#     source is TypeScript and compiles to dist/src/index.js.)
 services:
   - type: web
     name: nexo-snipe-bot
@@ -10,6 +23,8 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: '22'
       - key: SOLANA_NETWORK
         value: devnet
       - key: SOLANA_MAINNET_ENABLED

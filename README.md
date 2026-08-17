@@ -126,10 +126,40 @@ transfer, admin events with trace IDs, and the mainnet gate.
 docker compose up -d --build      # local production-like stack
 ```
 
-Render: push this repo, then use the Blueprint (`render.yaml` — bot web
-service + PostgreSQL) or create the two services manually (see the
-variables above). The bot runs migrations at startup and polls Telegram
-independently of anything else.
+### Render — fixing an existing service (30 seconds)
+
+If your Render service logs
+`Error: Cannot find module '/opt/render/project/src/src/index.js'`, it is
+running the **Node (native) runtime** with the old start command. The source
+is TypeScript — the compiled entry point lives at `dist/src/index.js`.
+
+Fix in **Render → your service → Settings**:
+
+| Field | Value |
+|---|---|
+| **Build Command** | `npm ci --include=dev --no-audit && npm run build` |
+| **Start Command** | `node dist/src/index.js` |
+
+> `--include=dev` is REQUIRED: Render sets `NODE_ENV=production`, which would
+> otherwise skip the TypeScript compiler and produce no build output.
+> Optionally add env var `NODE_VERSION=22`.
+
+### Render — fresh deployment (Docker Blueprint)
+
+Render → **New + → Blueprint** → connect GitHub → select this repo.
+`render.yaml` provisions a PostgreSQL database + a Docker web service (the
+Dockerfile compiles TypeScript in a build stage, no build commands needed).
+Set `BOT_TOKEN`, `ADMIN_IDS`, `ENCRYPTION_KEY` on the service
+(`DATABASE_URL` is wired automatically). Migrations run at startup and
+`/health` returns `OK`.
+
+### Free-tier notes
+
+- Free services sleep after ~15 min idle — a free UptimeRobot monitor on
+  `https://<service>.onrender.com/health` every 5 min keeps it awake.
+- Render's free PostgreSQL expires after ~30 days; for longer runs use a
+  free Neon/Supabase Postgres and paste its connection string as
+  `DATABASE_URL`.
 
 ## Security model
 

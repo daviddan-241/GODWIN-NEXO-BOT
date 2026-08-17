@@ -93,10 +93,20 @@ RATE_LIMIT_MAX=15
 RATE_LIMIT_WINDOW_MS=10000
 
 # --------------------------------------------------------------------------
-# 9. HEALTH SERVER / LOGGING (defaults are fine)
+# 9. HEALTH SERVER / LOGGING / NODE (defaults are fine)
 # --------------------------------------------------------------------------
 # UptimeRobot: point it at https://<your-service>.onrender.com/health -> "OK"
 HEALTHCHECK_ENABLED=true
 PORT=8080
 LOG_LEVEL=info
+
+# Render native-runtime only: pin the Node version (Docker uses its own).
+NODE_VERSION=22
 # ============================================================================
+
+# ----------------------------------------------------------------------------
+# RENDER QUICK FIX (if deploy fails with "Cannot find module .../src/index.js"):
+#   Render -> your service -> Settings:
+#     Build Command = npm ci --include=dev --no-audit && npm run build
+#     Start Command = node dist/src/index.js
+# ----------------------------------------------------------------------------
