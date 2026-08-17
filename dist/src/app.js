@@ -189,17 +189,52 @@ function createApp(config, logger, database) {
             }
             // 4. Deposit monitor.
             deposits.start();
-            // 5. Telegram polling (long-running).
-            void bot
-                .start({
-                onStart: (info) => logger.info({ botUsername: info.username }, 'Telegram polling started'),
-                allowed_updates: ['message', 'callback_query'],
-                drop_pending_updates: false,
-            })
-                .catch((err) => {
-                logger.fatal({ err: err instanceof Error ? err.message : String(err) }, 'Telegram polling crashed');
-                process.exit(1);
-            });
+            // 5. Telegram polling (long-running, resilient).
+            //    A 409 conflict (another instance polling the same bot token, or a
+            //    leftover webhook) must NOT kill the service: retry with backoff
+            //    and log clear remediation steps — polling resumes automatically
+            //    once the other instance stops or the webhook is cleared.
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+            void (async () => {
+                let attempt = 0;
+                for (;;) {
+                    attempt += 1;
+                    try {
+                        await bot.start({
+                            onStart: (info) => {
+                                attempt = 0; // healthy — reset the backoff counter
+                                logger.info({ botUsername: info.username }, 'Telegram polling started');
+                            },
+                            allowed_updates: ['message', 'callback_query'],
+                            drop_pending_updates: false,
+                        });
+                        return; // bot stopped normally during shutdown
+                    }
+                    catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        const isConflict = message.includes('409');
+                        if (isConflict) {
+                            logger.error({ attempt, err: message }, 'Telegram polling conflict (409): another instance is using this bot token');
+                            if (attempt === 1) {
+                                logger.error('Fix the conflict: stop the other bot instance (local machine? another Render service?), ' +
+                                    'or clear the webhook. Check status: GET https://api.telegram.org/bot<TOKEN>/getWebhookInfo ' +
+                                    'and clear it: GET https://api.telegram.org/bot<TOKEN>/deleteWebhook');
+                            }
+                        }
+                        else {
+                            logger.error({ attempt, err: message }, 'Telegram polling crashed; retrying with backoff');
+                        }
+                        try {
+                            await bot.stop(); // reset polling state so start() can run again
+                        }
+                        catch {
+                            // stop() may throw while not running — safe to ignore
+                        }
+                        const delay = Math.min(5_000 * 2 ** Math.min(attempt - 1, 5), 120_000);
+                        await sleep(delay);
+                    }
+                }
+            })();
         },
         async stop() {
             if (watcherTimer)

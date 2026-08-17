@@ -43,6 +43,9 @@ SOLANA_NETWORK=devnet
 SOLANA_MAINNET_ENABLED=false
 
 # Optional: use a private RPC (Helius/QuickNode) for production.
+# SAFETY: it MUST match SOLANA_NETWORK. The bot refuses to start when
+# SOLANA_NETWORK=devnet is combined with a mainnet RPC (or vice versa).
+# If you see "conflicts with a mainnet RPC" in the log: DELETE this variable.
 # SOLANA_RPC_URL=
 
 # Optional WebSocket endpoint: wakes the deposit monitor on account changes.

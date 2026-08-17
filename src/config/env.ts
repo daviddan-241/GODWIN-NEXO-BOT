@@ -133,6 +133,27 @@ function toAppConfig(env: z.infer<typeof EnvSchema>) {
   const mainnetTradingEnabled =
     env.SOLANA_NETWORK === 'mainnet' && env.SOLANA_MAINNET_ENABLED === true;
 
+  /**
+   * RPC/NETWORK CONSISTENCY GUARD
+   * A mismatched RPC endpoint would make the bot believe it trades on one
+   * network while broadcasting to another (e.g. "devnet" flags while the
+   * RPC is really mainnet). Refuse to start on such configurations.
+   */
+  const looksMainnet = /(^|[./-])mainnet([./-]|$)/.test(rpcUrl);
+  const looksDevnet = /(^|[./-])devnet([./-]|$)/.test(rpcUrl);
+  if (env.SOLANA_NETWORK === 'devnet' && looksMainnet) {
+    throw new Error(
+      `Safety: SOLANA_NETWORK=devnet conflicts with a mainnet RPC endpoint (${rpcUrl}). ` +
+        'Remove SOLANA_RPC_URL, or set SOLANA_NETWORK=mainnet AND SOLANA_MAINNET_ENABLED=true.',
+    );
+  }
+  if (env.SOLANA_NETWORK === 'mainnet' && looksDevnet) {
+    throw new Error(
+      `Safety: SOLANA_NETWORK=mainnet conflicts with a devnet RPC endpoint (${rpcUrl}). ` +
+        'Remove SOLANA_RPC_URL, or set SOLANA_NETWORK=devnet.',
+    );
+  }
+
   return {
     ...env,
     appName: env.APP_NAME,

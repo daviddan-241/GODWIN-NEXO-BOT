@@ -106,6 +106,29 @@ describe('config/env', () => {
     expect(config.rpcUrl).toBe('https://rpc.example.com/');
   });
 
+  it('REJECTS devnet network with a mainnet RPC (safety guard)', () => {
+    expect(() =>
+      loadConfig({ ...baseEnv, SOLANA_NETWORK: 'devnet', SOLANA_RPC_URL: 'https://api.mainnet-beta.solana.com/' }),
+    ).toThrow(/conflicts with a mainnet RPC/);
+  });
+
+  it('REJECTS mainnet network with a devnet RPC (safety guard)', () => {
+    expect(() =>
+      loadConfig({ ...baseEnv, SOLANA_NETWORK: 'mainnet', SOLANA_RPC_URL: 'https://api.devnet.solana.com/' }),
+    ).toThrow(/conflicts with a devnet RPC/);
+  });
+
+  it('allows mainnet network + mainnet RPC (with the mainnet flag)', () => {
+    const config = loadConfig({
+      ...baseEnv,
+      SOLANA_NETWORK: 'mainnet',
+      SOLANA_MAINNET_ENABLED: 'true',
+      SOLANA_RPC_URL: 'https://api.mainnet-beta.solana.com/',
+    });
+    expect(config.rpcUrl).toBe('https://api.mainnet-beta.solana.com/');
+    expect(config.tradingAllowed).toBe(true);
+  });
+
   it('rejects an invalid SOLANA_NETWORK value', () => {
     expect(() => loadConfig({ ...baseEnv, SOLANA_NETWORK: 'testnet' })).toThrow();
   });
