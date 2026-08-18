@@ -50,6 +50,10 @@ const EnvSchema = z
     /** Copy-trade monitor poll interval (ms). */
     COPYTRADE_POLL_INTERVAL_MS: z.coerce.number().int().min(5_000).default(15_000),
 
+    /** AI Sniper: scanner/TP-SL poll interval + anti-rug minimum token age. */
+    SNIPER_POLL_INTERVAL_MS: z.coerce.number().int().min(5_000).default(15_000),
+    SNIPER_MIN_AGE_SEC: z.coerce.number().int().min(0).default(120),
+
     /** Optional WebSocket endpoint for account-change driven deposit checks. */
     SOLANA_WS_URL: z.string().url('SOLANA_WS_URL must be a valid URL').optional(),
 

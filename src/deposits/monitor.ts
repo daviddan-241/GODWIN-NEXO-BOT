@@ -54,7 +54,7 @@ export class DepositMonitor {
    * (DEPOSIT RECEIVED). Wired to the Telegram API after bot construction.
    */
   onUserDeposit:
-    | ((chatId: number, address: string, amountSol: number, newBalanceSol: number) => Promise<void>)
+    | ((chatId: number, address: string, amountSol: number, newBalanceSol: number, signature: string | null) => Promise<void>)
     | null = null;
 
   constructor(
@@ -209,6 +209,7 @@ export class DepositMonitor {
         address,
         Number(diff.delta) / 1e9,
         Number(curr[WSOL_MINT]) / 1e9,
+        meta.signature,
       );
     }
   }

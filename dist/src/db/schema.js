@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.copytradeSignals = exports.copyTrade = exports.positions = exports.sniperSettings = exports.adminEvents = exports.schemaMigrations = exports.balanceSnapshots = exports.deposits = exports.trades = exports.botSessions = exports.wallets = exports.userSettings = exports.users = void 0;
+exports.copytradeSignals = exports.copyTrade = exports.sniperSeen = exports.positions = exports.sniperSettings = exports.adminEvents = exports.schemaMigrations = exports.balanceSnapshots = exports.deposits = exports.trades = exports.botSessions = exports.wallets = exports.userSettings = exports.users = void 0;
 /**
  * Database schema (PostgreSQL via drizzle-orm).
  *
@@ -134,9 +134,19 @@ exports.positions = (0, pg_core_1.pgTable)('positions', {
     amountSol: (0, pg_core_1.doublePrecision)('amount_sol').notNull(),
     entryPriceUsd: (0, pg_core_1.doublePrecision)('entry_price_usd').notNull(),
     status: (0, pg_core_1.text)('status').notNull().default('open'),
+    /** True when the position was opened by the AI Sniper (TP/SL managed). */
+    sniper: (0, pg_core_1.boolean)('sniper').notNull().default(false),
     openedAt: (0, pg_core_1.timestamp)('opened_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: (0, pg_core_1.timestamp)('closed_at', { withTimezone: true }),
 }, (t) => [(0, pg_core_1.index)('idx_positions_chat').on(t.chatId, t.status)]);
+/** Mints the AI Sniper has already scanned (restart-safe dedupe). */
+exports.sniperSeen = (0, pg_core_1.pgTable)('sniper_seen', {
+    chatId: (0, pg_core_1.bigint)('chat_id', { mode: 'number' })
+        .notNull()
+        .references(() => exports.users.chatId, { onDelete: 'cascade' }),
+    mint: (0, pg_core_1.text)('mint').notNull(),
+    createdAt: (0, pg_core_1.timestamp)('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [(0, pg_core_1.primaryKey)({ columns: [t.chatId, t.mint] })]);
 /** Copy-trade configuration per user. */
 exports.copyTrade = (0, pg_core_1.pgTable)('copy_trade', {
     chatId: (0, pg_core_1.bigint)('chat_id', { mode: 'number' })

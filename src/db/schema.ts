@@ -172,10 +172,25 @@ export const positions = pgTable(
     amountSol: doublePrecision('amount_sol').notNull(),
     entryPriceUsd: doublePrecision('entry_price_usd').notNull(),
     status: text('status').notNull().default('open'),
+    /** True when the position was opened by the AI Sniper (TP/SL managed). */
+    sniper: boolean('sniper').notNull().default(false),
     openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
     closedAt: timestamp('closed_at', { withTimezone: true }),
   },
   (t) => [index('idx_positions_chat').on(t.chatId, t.status)],
+);
+
+/** Mints the AI Sniper has already scanned (restart-safe dedupe). */
+export const sniperSeen = pgTable(
+  'sniper_seen',
+  {
+    chatId: bigint('chat_id', { mode: 'number' })
+      .notNull()
+      .references(() => users.chatId, { onDelete: 'cascade' }),
+    mint: text('mint').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.chatId, t.mint] })],
 );
 
 /** Copy-trade configuration per user. */

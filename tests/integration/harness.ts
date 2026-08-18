@@ -15,6 +15,7 @@ import { TradingExecutor } from '../../src/trading/executor';
 import { PortfolioService } from '../../src/portfolio/service';
 import { DepositMonitor } from '../../src/deposits/monitor';
 import { CopyTradeMonitor } from '../../src/copytrade/monitor';
+import { SniperEngine } from '../../src/sniper/engine';
 import { AdminNotifier } from '../../src/admin/notifier';
 import { DbSessionStore } from '../../src/telegram/session';
 import { createBot, type BotInstance, type BotServices } from '../../src/telegram/bot';
@@ -80,6 +81,10 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
   const deposits = new DepositMonitor(config, repos, solana, notifier, logger);
   const trading = new TradingExecutor(config, repos, solana, swaps, prices, wallets, deposits, logger);
   const copytrade = new CopyTradeMonitor(config, repos, solana, trading, notifier, logger);
+  // Test fetch: sniper's pump.fun feed is injected per-test via `setFeed`.
+  const sniper = new SniperEngine(config, repos, solana, trading, tokens, notifier, logger, async () => {
+    throw new Error('no sniper feed in tests');
+  });
   const portfolio = new PortfolioService(repos, solana, prices, logger);
 
   const services: BotServices = {
@@ -96,6 +101,7 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     portfolio,
     deposits,
     copytrade,
+    sniper,
     notifier,
     sessions,
     sendToUser: async () => {
@@ -125,6 +131,8 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
   copytrade.onUserAlert = (chatId, text) =>
     bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } }).then(() => undefined);
+  sniper.onUserAlert = (chatId, text) =>
+    bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } }).then(() => undefined);
 
   // grammY start() runs getMe + long polling; await init() so the bot is
   // verified before tests begin, then leave polling running.
@@ -146,6 +154,7 @@ export async function startTestApp(configOverrides: Record<string, string> = {})
     cleanup: async () => {
       deposits.stop();
       copytrade.stop();
+      sniper.stop();
       try {
         await bot.stop();
       } catch {

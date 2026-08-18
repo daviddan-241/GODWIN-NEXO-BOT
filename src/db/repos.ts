@@ -17,6 +17,7 @@ import {
   positions,
   copyTrade,
   copytradeSignals,
+  sniperSeen,
 } from './schema';
 
 export interface UserRecord {
@@ -78,6 +79,7 @@ export interface PositionRecord {
   amountSol: number;
   entryPriceUsd: number;
   status: 'open' | 'closed';
+  sniper: boolean;
   openedAt: Date;
   closedAt: Date | null;
 }
@@ -340,6 +342,7 @@ export class Repos {
     tokenName: string;
     amountSol: number;
     entryPriceUsd: number;
+    sniper?: boolean;
   }): Promise<PositionRecord> {
     const rows = await this.db
       .insert(positions)
@@ -351,6 +354,7 @@ export class Repos {
         amountSol: p.amountSol,
         entryPriceUsd: p.entryPriceUsd,
         status: 'open',
+        sniper: p.sniper ?? false,
       })
       .returning();
     return rows[0] as PositionRecord;
@@ -361,6 +365,22 @@ export class Repos {
       .select()
       .from(positions)
       .where(and(eq(positions.chatId, chatId), eq(positions.status, 'open')))
+      .orderBy(desc(positions.openedAt));
+    return rows as PositionRecord[];
+  }
+
+  /** Open positions opened by the AI Sniper (TP/SL managed). */
+  async getOpenSniperPositions(chatId: number): Promise<PositionRecord[]> {
+    const rows = await this.db
+      .select()
+      .from(positions)
+      .where(
+        and(
+          eq(positions.chatId, chatId),
+          eq(positions.status, 'open'),
+          eq(positions.sniper, true),
+        ),
+      )
       .orderBy(desc(positions.openedAt));
     return rows as PositionRecord[];
   }
@@ -441,8 +461,7 @@ export class Repos {
   }
 
   // ---- copy-trade signals ------------------------------------------------
-  async hasCopytradeSignal(chatId: number, signature: string): Promise<boolean> {
-    const rows = await this.db
+  async hasCopytradeSignal(chatId: number, signature: string): Promise<boolean> {    const rows = await this.db
       .select({ s: copytradeSignals.signature })
       .from(copytradeSignals)
       .where(and(eq(copytradeSignals.chatId, chatId), eq(copytradeSignals.signature, signature)))
@@ -455,6 +474,31 @@ export class Repos {
       .insert(copytradeSignals)
       .values({ chatId, signature, status })
       .onConflictDoNothing({ target: [copytradeSignals.chatId, copytradeSignals.signature] });
+  }
+
+  // ---- sniper scanner dedupe ---------------------------------------------
+  async hasSniperSeen(chatId: number, mint: string): Promise<boolean> {
+    const rows = await this.db
+      .select({ m: sniperSeen.mint })
+      .from(sniperSeen)
+      .where(and(eq(sniperSeen.chatId, chatId), eq(sniperSeen.mint, mint)))
+      .limit(1);
+    return rows.length > 0;
+  }
+
+  async insertSniperSeen(chatId: number, mint: string): Promise<void> {
+    await this.db
+      .insert(sniperSeen)
+      .values({ chatId, mint })
+      .onConflictDoNothing({ target: [sniperSeen.chatId, sniperSeen.mint] });
+  }
+
+  async countSniperSeen(chatId: number): Promise<number> {
+    const rows = await this.db
+      .select({ c: count() })
+      .from(sniperSeen)
+      .where(eq(sniperSeen.chatId, chatId));
+    return Number(rows[0]?.c ?? 0);
   }
 
   // ---- sessions --------------------------------------------------------

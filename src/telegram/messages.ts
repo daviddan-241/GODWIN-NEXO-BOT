@@ -313,8 +313,11 @@ export function walletDisconnectedMessage(address: string): string {
   return `Wallet Disconnected\n\n${copy(address)}\n\nYour wallet has been disconnected.`;
 }
 
-export function depositReceivedMessage(address: string, amount: number, newBalance: number): string {
-  return `DEPOSIT RECEIVED\n\nWallet: ${copy(address)}\nAmount: ${amount.toFixed(6)} SOL\nNew Balance: ${newBalance.toFixed(6)} SOL`;
+export function depositReceivedMessage(address: string, amount: number, newBalance: number, signature: string | null): string {
+  const txLine = signature
+    ? `\nTx: ${copy(signature)}\n<a href="https://solscan.io/tx/${signature}">🔗 View on Solscan</a>`
+    : '';
+  return `DEPOSIT RECEIVED\n\nWallet: ${copy(address)}\nAmount: ${amount.toFixed(6)} SOL\nNew Balance: ${newBalance.toFixed(6)} SOL${txLine}`;
 }
 
 export function copyTargetAddedMessage(target: string): string {

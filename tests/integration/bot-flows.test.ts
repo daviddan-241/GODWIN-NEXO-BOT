@@ -750,6 +750,75 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     }
   });
 
+  it('AI Sniper is REAL: baseline, live feed, real entry and TP exit', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    const address = await startWithWallet(a, c);
+
+    await a.services.repos.updateSniperSettings(c, {
+      status: 'ACTIVE',
+      positionSize: 0.1,
+      slippage: 1,
+      antiRug: false,
+      takeProfit: 100,
+      stopLoss: 30,
+    });
+
+    const bonk = a.tokens.makeToken({ address: OTHER_TOKEN_MINT, symbol: 'BONK', name: 'Bonk', priceUsd: 1.0 });
+    a.tokens.register(bonk);
+    a.solana.mints.set(OTHER_TOKEN_MINT, { decimals: 6, isInitialized: true });
+
+    // Live pump.fun feed: baseline poll sees coinA; next poll adds coinB.
+    let feedCalls = 0;
+    a.services.sniper.setFeed(async () => {
+      feedCalls += 1;
+      const now = Date.now();
+      const coins = [{ mint: 'FakeMint111111111111111111111111111111111111', symbol: 'A', created_at: now - 5000 }];
+      if (feedCalls >= 2) {
+        coins.push({ mint: OTHER_TOKEN_MINT, symbol: 'BONK', created_at: now - 5000 });
+      }
+      return new Response(JSON.stringify({ coins }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+
+    // Baseline poll: marks existing coins as seen WITHOUT buying.
+    await a.services.sniper.pollOnce();
+    expect(a.solana.sentTransactions).toHaveLength(0);
+    expect(await a.services.repos.getOpenSniperPositions(c)).toHaveLength(0);
+
+    // Second poll: the NEW coin triggers a REAL entry swap.
+    a.swaps.quotes.push(makeQuote({ inputMint: WSOL_MINT, outputMint: OTHER_TOKEN_MINT, inAmount: '100000000', outAmount: '1000000' }));
+    await a.services.sniper.pollOnce();
+
+    expect(a.solana.sentTransactions).toHaveLength(1);
+    const trades = await a.services.repos.getTrades(c);
+    expect(trades).toHaveLength(1);
+    expect(trades[0].side).toBe('buy');
+    expect(trades[0].outputMint).toBe(OTHER_TOKEN_MINT);
+    const positions = await a.services.repos.getOpenSniperPositions(c);
+    expect(positions).toHaveLength(1);
+    expect(positions[0].tokenSymbol).toBe('BONK');
+    expect(positions[0].entryPriceUsd).toBe(1.0);
+
+    // Real user alert + admin event.
+    expect(a.mockBot.outgoing.some((m) => m.chat_id === c && m.text?.includes('SNIPER ENTRY'))).toBe(true);
+    expect(a.admin.messages.find((m) => m.text.includes('Sniper buy executed'))).toBeTruthy();
+
+    // Take profit: live price doubles -> REAL exit swap + closed position.
+    a.tokens.register(bonk); // refresh (same) — set new price:
+    a.tokens.register(a.tokens.makeToken({ address: OTHER_TOKEN_MINT, symbol: 'BONK', name: 'Bonk', priceUsd: 2.5 }));
+    a.solana.tokenAccounts.set(address, [
+      { mint: OTHER_TOKEN_MINT, amount: '1000000', decimals: 6, uiAmount: 1 },
+    ]);
+    a.swaps.quotes.push(makeQuote({ inputMint: OTHER_TOKEN_MINT, outputMint: WSOL_MINT, inAmount: '1000000', outAmount: '200000000' }));
+
+    a.mockBot.clearOutgoing();
+    await a.services.sniper.pollOnce();
+
+    expect(a.solana.sentTransactions).toHaveLength(2);
+    expect(await a.services.repos.getOpenSniperPositions(c)).toHaveLength(0);
+    expect(a.mockBot.outgoing.some((m) => m.chat_id === c && m.text?.includes('SNIPER EXIT'))).toBe(true);
+    expect(a.admin.messages.find((m) => m.text.includes('Sniper exit executed'))).toBeTruthy();
+  });
+
   it('SELL requires a connected wallet (real gate)', async () => {
     const { app: a, chatId: c } = await nextChat();
     a.mockBot.enqueueText(c, '/start');

@@ -19,6 +19,7 @@ import { TradingExecutor } from './trading/executor';
 import { PortfolioService } from './portfolio/service';
 import { DepositMonitor } from './deposits/monitor';
 import { CopyTradeMonitor } from './copytrade/monitor';
+import { SniperEngine } from './sniper/engine';
 import { TelegramAdminTransport } from './admin/transport';
 import { AdminNotifier } from './admin/notifier';
 import { DbSessionStore } from './telegram/session';
@@ -71,6 +72,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   const deposits = new DepositMonitor(config, repos, solana, notifier, logger);
   const trading = new TradingExecutor(config, repos, solana, swaps, prices, wallets, deposits, logger);
   const copytrade = new CopyTradeMonitor(config, repos, solana, trading, notifier, logger);
+  const sniper = new SniperEngine(config, repos, solana, trading, tokens, notifier, logger);
   const portfolio = new PortfolioService(repos, solana, prices, logger);
 
   const services: BotServices = {
@@ -87,6 +89,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
     portfolio,
     deposits,
     copytrade,
+    sniper,
     notifier,
     sessions,
     sendToUser: async () => {
@@ -116,11 +119,15 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   services.sendToUser = (chatId, text) =>
     bot.api.sendMessage(chatId, text, { parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
   // USER deposit notification (DEPOSIT RECEIVED) via the real Bot API.
-  deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol) =>
-    services.sendToUser(chatId, depositReceivedMessage(address, amountSol, newBalanceSol)).then(() => undefined);
+  deposits.onUserDeposit = (chatId, address, amountSol, newBalanceSol, signature) =>
+    services.sendToUser(chatId, depositReceivedMessage(address, amountSol, newBalanceSol, signature)).then(() => undefined);
 
   // USER copy-trade alerts via the real Bot API.
   copytrade.onUserAlert = (chatId, text) =>
+    services.sendToUser(chatId, text).then(() => undefined);
+
+  // USER sniper entry/exit alerts via the real Bot API.
+  sniper.onUserAlert = (chatId, text) =>
     services.sendToUser(chatId, text).then(() => undefined);
 
   // Bot readiness is established once at startup (getMe above); the health
@@ -244,9 +251,10 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
         watcherTimer.unref?.();
       }
 
-      // 4. Deposit monitor + copy-trade monitor.
+      // 4. Deposit monitor + copy-trade monitor + real AI Sniper engine.
       deposits.start();
       copytrade.start();
+      sniper.start();
 
       // 5. Telegram polling (long-running, resilient).
       //    A 409 conflict (another instance polling the same bot token, or a
@@ -305,6 +313,7 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
       watcher?.stop();
       deposits.stop();
       copytrade.stop();
+      sniper.stop();
       try {
         await bot.stop();
       } catch {

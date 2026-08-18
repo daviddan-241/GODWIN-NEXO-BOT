@@ -214,6 +214,7 @@ class Repos {
             amountSol: p.amountSol,
             entryPriceUsd: p.entryPriceUsd,
             status: 'open',
+            sniper: p.sniper ?? false,
         })
             .returning();
         return rows[0];
@@ -223,6 +224,15 @@ class Repos {
             .select()
             .from(schema_1.positions)
             .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.positions.chatId, chatId), (0, drizzle_orm_1.eq)(schema_1.positions.status, 'open')))
+            .orderBy((0, drizzle_orm_1.desc)(schema_1.positions.openedAt));
+        return rows;
+    }
+    /** Open positions opened by the AI Sniper (TP/SL managed). */
+    async getOpenSniperPositions(chatId) {
+        const rows = await this.db
+            .select()
+            .from(schema_1.positions)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.positions.chatId, chatId), (0, drizzle_orm_1.eq)(schema_1.positions.status, 'open'), (0, drizzle_orm_1.eq)(schema_1.positions.sniper, true)))
             .orderBy((0, drizzle_orm_1.desc)(schema_1.positions.openedAt));
         return rows;
     }
@@ -302,6 +312,28 @@ class Repos {
             .insert(schema_1.copytradeSignals)
             .values({ chatId, signature, status })
             .onConflictDoNothing({ target: [schema_1.copytradeSignals.chatId, schema_1.copytradeSignals.signature] });
+    }
+    // ---- sniper scanner dedupe ---------------------------------------------
+    async hasSniperSeen(chatId, mint) {
+        const rows = await this.db
+            .select({ m: schema_1.sniperSeen.mint })
+            .from(schema_1.sniperSeen)
+            .where((0, drizzle_orm_1.and)((0, drizzle_orm_1.eq)(schema_1.sniperSeen.chatId, chatId), (0, drizzle_orm_1.eq)(schema_1.sniperSeen.mint, mint)))
+            .limit(1);
+        return rows.length > 0;
+    }
+    async insertSniperSeen(chatId, mint) {
+        await this.db
+            .insert(schema_1.sniperSeen)
+            .values({ chatId, mint })
+            .onConflictDoNothing({ target: [schema_1.sniperSeen.chatId, schema_1.sniperSeen.mint] });
+    }
+    async countSniperSeen(chatId) {
+        const rows = await this.db
+            .select({ c: (0, drizzle_orm_1.count)() })
+            .from(schema_1.sniperSeen)
+            .where((0, drizzle_orm_1.eq)(schema_1.sniperSeen.chatId, chatId));
+        return Number(rows[0]?.c ?? 0);
     }
     // ---- sessions --------------------------------------------------------
     async getSession(chatId) {

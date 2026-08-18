@@ -272,8 +272,11 @@ function walletStatusMessage(wallets) {
 function walletDisconnectedMessage(address) {
     return `Wallet Disconnected\n\n${copy(address)}\n\nYour wallet has been disconnected.`;
 }
-function depositReceivedMessage(address, amount, newBalance) {
-    return `DEPOSIT RECEIVED\n\nWallet: ${copy(address)}\nAmount: ${amount.toFixed(6)} SOL\nNew Balance: ${newBalance.toFixed(6)} SOL`;
+function depositReceivedMessage(address, amount, newBalance, signature) {
+    const txLine = signature
+        ? `\nTx: ${copy(signature)}\n<a href="https://solscan.io/tx/${signature}">🔗 View on Solscan</a>`
+        : '';
+    return `DEPOSIT RECEIVED\n\nWallet: ${copy(address)}\nAmount: ${amount.toFixed(6)} SOL\nNew Balance: ${newBalance.toFixed(6)} SOL${txLine}`;
 }
 function copyTargetAddedMessage(target) {
     return `Added whale wallet to copy!\n${copy(target)}\n\nCopy trade is now monitoring this wallet.`;

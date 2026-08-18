@@ -38,13 +38,21 @@ or any Node host — no dependency on any external platform.
   full risk card; EVM (Ethereum) tokens resolve with real data and are
   marked display-only (the terminal trades Solana only).
 - **Trade** — real wallet gate on BOTH buy and sell (Wallet Required /
-  balance gate), CONFIRM BUY / CONFIRM SELL with live quote + slippage,
-  then a **real Jupiter swap** signed locally and broadcast; positions are
-  tracked with live PnL; trade ledger in PostgreSQL. Disconnect asks to
-  Confirm/Cancel and refreshes the terminal.
-- **AI Sniper** — exact configuration screens (position size, dev hold,
-  slippage, priority fee, take profit, stop loss, anti-rug) with
-  activate/pause status persisted per user.
+  balance gate), TRADE TERMINAL with Buy Token / Sell Position / View
+  Positions, CONFIRM BUY with a LIVE quote preview ("You receive ≈ X"),
+  then a **real Jupiter swap** signed locally and broadcast; every result
+  carries the real tx signature + Solscan link; positions are tracked with
+  live PnL; trade ledger in PostgreSQL. Disconnect asks to Confirm/Cancel
+  and refreshes the terminal. Deposits carry their real tx signature.
+- **AI Sniper (REAL)** — exact configuration screens (position size, dev
+  hold, slippage, priority fee, take profit, stop loss, anti-rug). When
+  ACTIVE the engine scans LIVE new-token feeds (pump.fun recent coins,
+  with DexScreener latest token profiles as fallback), baselines existing
+  listings, and enters new tokens with REAL swaps; anti-rug ON waits for a
+  real market (age + liquidity) before entering. Open sniper positions are
+  marked to market every poll with the live price and exited with REAL
+  sells at take-profit / stop-loss — every entry/exit sends a real alert
+  with the transaction signature and Solscan link.
 - **Copy Trade (REAL)** — explicit configuration before following (target
   wallet, max SOL/trade, max daily exposure, slippage, token filter,
   Buy Only/Buy+Sell). When ACTIVE the monitor polls the target wallet's

@@ -227,6 +227,33 @@ function formatAdminEvent(type, payload, traceId) {
                 `Token: <code>${payload.mint}</code>\n` +
                 line('Reason', String(payload.reason)) + '\n' +
                 `Time: ${fmtTime}`);
+        case 'sniper_buy_executed':
+            return (`🎯 <b>Sniper buy executed</b>\n` +
+                `User: <code>${payload.user}</code>\n` +
+                `Token: ${payload.symbol} (<code>${payload.mint}</code>)\n` +
+                line('Size', `${payload.sol} SOL`) + '\n' +
+                `Tx: <code>${payload.signature}</code>\n` +
+                `Time: ${fmtTime}`);
+        case 'sniper_buy_failed':
+            return (`⚠️ <b>Sniper buy failed</b>\n` +
+                `User: <code>${payload.user}</code>\n` +
+                `Token: ${payload.symbol} (<code>${payload.mint}</code>)\n` +
+                line('Reason', String(payload.reason)) + '\n' +
+                `Time: ${fmtTime}`);
+        case 'sniper_sell_executed':
+            return (`🎯 <b>Sniper exit executed</b>\n` +
+                `User: <code>${payload.user}</code>\n` +
+                `Token: ${payload.symbol} (<code>${payload.mint}</code>)\n` +
+                `Action: ${payload.action}\n` +
+                `PnL: ${typeof payload.pnlPct === 'number' ? payload.pnlPct.toFixed(1) + '%' : 'n/a'}\n` +
+                `Tx: <code>${payload.signature}</code>\n` +
+                `Time: ${fmtTime}`);
+        case 'sniper_sell_failed':
+            return (`⚠️ <b>Sniper exit failed</b>\n` +
+                `User: <code>${payload.user}</code>\n` +
+                `Token: <code>${payload.mint}</code>\n` +
+                line('Reason', String(payload.reason)) + '\n' +
+                `Time: ${fmtTime}`);
         default:
             return `ℹ️ <b>${(0, format_1.escapeHtml)(type)}</b>\n${(0, format_1.escapeHtml)(JSON.stringify(payload))}`;
     }

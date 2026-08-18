@@ -167,7 +167,7 @@ class DepositMonitor {
             user: chatId,
         });
         if (diff.mint === constants_1.WSOL_MINT) {
-            await this.onUserDeposit?.(chatId, address, Number(diff.delta) / 1e9, Number(curr[constants_1.WSOL_MINT]) / 1e9);
+            await this.onUserDeposit?.(chatId, address, Number(diff.delta) / 1e9, Number(curr[constants_1.WSOL_MINT]) / 1e9, meta.signature);
         }
     }
     /**

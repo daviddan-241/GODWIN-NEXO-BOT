@@ -17,6 +17,7 @@ import type { TradingExecutor } from '../trading/executor';
 import type { PortfolioService } from '../portfolio/service';
 import type { DepositMonitor } from '../deposits/monitor';
 import type { CopyTradeMonitor } from '../copytrade/monitor';
+import type { SniperEngine } from '../sniper/engine';
 import type { AdminNotifier } from '../admin/notifier';
 import type { SessionData, SessionStore } from './session';
 import { RateLimiter } from './rate-limit';
@@ -88,6 +89,7 @@ export interface BotServices {
   portfolio: PortfolioService;
   deposits: DepositMonitor;
   copytrade: CopyTradeMonitor;
+  sniper: SniperEngine;
   notifier: AdminNotifier;
   sessions: SessionStore;
   /** Sends a message to an arbitrary chat (wired to bot.api after construction). */

@@ -15,8 +15,8 @@ import {
 import * as msg from '../messages';
 import * as kb from '../keyboards';
 import { formatTokenInfo, type TokenInfo } from '../../market/token-resolver';
-import { LAMPORTS_PER_SOL } from '../../config/constants';
-import { solToLamports } from '../../util/format';
+import { LAMPORTS_PER_SOL, WSOL_MINT } from '../../config/constants';
+import { solToLamports, formatTokenAmount } from '../../util/format';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,6 +58,32 @@ export async function dashboard(ctx: BotContext): Promise<void> {
   // ONE message: logo photo + terminal text as the caption + the main
   // keyboard together (as in the screenshot).
   await ctx.services.sendTerminal(ctx, text, kb.dashboardKeyboard());
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Live quote preview line for CONFIRM BUY ("You receive ≈ X TOK"). */
+async function quotePreviewLine(
+  ctx: BotContext,
+  token: { address: string; symbol: string },
+  amountSol: number,
+  slippagePct: number,
+): Promise<string> {
+  try {
+    const quote = await ctx.services.swaps.getQuote({
+      inputMint: WSOL_MINT,
+      outputMint: token.address,
+      amount: String(Math.round(amountSol * LAMPORTS_PER_SOL)),
+      slippageBps: Math.round(slippagePct * 100),
+    });
+    const decimals = (await ctx.services.solana.getMintInfo(token.address).catch(() => ({ decimals: 9 }))).decimals;
+    const out = formatTokenAmount(quote.outAmount, decimals);
+    return `\n\nYou receive ≈ ${out} ${token.symbol}`;
+  } catch {
+    return '';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -557,9 +583,10 @@ export const buyFromSearchHandler = safeHandler('nexo.buy.fromSearch', async (ct
     tokenPriceUsd: String(token.priceUsd),
     walletAddress: primary?.address,
   });
+  const quoteLine = await quotePreviewLine(ctx, token, settings.positionSize, settings.slippage);
   await ctx.reply(
-    msg.confirmBuyMessage(token, settings.positionSize, settings.slippage, primary ? `SOL Wallet ${primary.walletNumber}` : 'n/a'),
-    { reply_markup: kb.confirmBuyKeyboard() },
+    msg.confirmBuyMessage(token, settings.positionSize, settings.slippage, primary ? `SOL Wallet ${primary.walletNumber}` : 'n/a') + quoteLine,
+    { parse_mode: 'HTML', reply_markup: kb.confirmBuyKeyboard() },
   );
 });
 
@@ -585,9 +612,10 @@ export const buyFromTradeHandler = safeHandler('nexo.buy.fromTrade', async (ctx)
     tokenPriceUsd: String(token.priceUsd),
     walletAddress: wallet?.address,
   });
+  const quoteLine = await quotePreviewLine(ctx, token, settings.positionSize, settings.slippage);
   await ctx.reply(
-    msg.confirmBuyMessage(token, settings.positionSize, settings.slippage, wallet ? `SOL Wallet ${wallet.walletNumber}` : 'n/a'),
-    { reply_markup: kb.confirmBuyKeyboard() },
+    msg.confirmBuyMessage(token, settings.positionSize, settings.slippage, wallet ? `SOL Wallet ${wallet.walletNumber}` : 'n/a') + quoteLine,
+    { parse_mode: 'HTML', reply_markup: kb.confirmBuyKeyboard() },
   );
 });
 
@@ -653,8 +681,8 @@ export const buyConfirmHandler = safeHandler('nexo.buy.confirm', async (ctx) => 
   await resetToIdle(ctx);
   await ctx.reply(
     msg.buyExecutedMessage(payload.tokenName ?? 'Token', payload.tokenSymbol ?? '???', amountSol) +
-      `\n\nTX: ${result!.signature}`,
-    { reply_markup: kb.backToDashboardKeyboard() },
+      `\n\nTx: <code>${result!.signature}</code>\n<a href="https://solscan.io/tx/${result!.signature}">🔗 View on Solscan</a>`,
+    { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() },
   );
 });
 
@@ -772,8 +800,8 @@ export const sellAmountHandler = safeHandler('nexo.sell.amount', async (ctx) => 
   await resetToIdle(ctx);
   await ctx.reply(
     msg.sellExecutedMessage(payload.tokenName ?? 'Token', payload.tokenSymbol ?? '???', `${text} tokens`) +
-      `\n\nTX: ${result!.signature}`,
-    { reply_markup: kb.backToDashboardKeyboard() },
+      `\n\nTx: <code>${result!.signature}</code>\n<a href="https://solscan.io/tx/${result!.signature}">🔗 View on Solscan</a>`,
+    { parse_mode: 'HTML', reply_markup: kb.backToDashboardKeyboard() },
   );
 });
 

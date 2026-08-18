@@ -89,6 +89,8 @@ BIRDEYE_API_URL=https://public-api.birdeye.com
 JUPITER_TOKEN_LIST_URL=https://token.jup.ag/strict
 PUMPFUN_API_URL=https://frontend-api.pump.fun
 COPYTRADE_POLL_INTERVAL_MS=15000
+SNIPER_POLL_INTERVAL_MS=15000
+SNIPER_MIN_AGE_SEC=120
 JUPITER_QUOTE_API_URL=https://quote-api.jup.ag/v6
 JUPITER_PRICE_API_URL=https://api.jup.ag/price/v2
 
