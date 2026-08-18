@@ -43,7 +43,6 @@ export function terminalMessage(
   wallets: Array<{ address: string; balance: number }>,
   market: TerminalMarket,
   solPrice: number,
-  minimum: string,
 ): string {
   const lines: string[] = [];
   lines.push(`👋 Hello, ${esc(firstName)}!`);
@@ -80,9 +79,7 @@ export function terminalMessage(
   lines.push(marketLine('ETH', market.ETH.price, market.ETH.change));
   lines.push(marketLine('BNB', market.BNB.price, market.BNB.change));
   lines.push('');
-  lines.push('🔒 TRADE GATE');
-  lines.push('Wallet + balance check required before buy/sell');
-  lines.push(`Minimum balance: ${esc(minimum)} SOL`);
+  lines.push('🔒 Wallet + balance check required before buy/sell');
   lines.push('');
   lines.push('Review the token. Confirm the order. Track the exit.');
 

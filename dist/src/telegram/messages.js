@@ -65,7 +65,7 @@ function marketLine(symbol, price, change) {
     const circle = change >= 0 ? '🟢' : '🔴';
     return `${circle} ${symbol} $${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${arrow} ${Math.abs(change).toFixed(2)}%`;
 }
-function terminalMessage(firstName, wallets, market, solPrice, minimum) {
+function terminalMessage(firstName, wallets, market, solPrice) {
     const lines = [];
     lines.push(`👋 Hello, ${esc(firstName)}!`);
     lines.push('');
@@ -100,9 +100,7 @@ function terminalMessage(firstName, wallets, market, solPrice, minimum) {
     lines.push(marketLine('ETH', market.ETH.price, market.ETH.change));
     lines.push(marketLine('BNB', market.BNB.price, market.BNB.change));
     lines.push('');
-    lines.push('🔒 TRADE GATE');
-    lines.push('Wallet + balance check required before buy/sell');
-    lines.push(`Minimum balance: ${esc(minimum)} SOL`);
+    lines.push('🔒 Wallet + balance check required before buy/sell');
     lines.push('');
     lines.push('Review the token. Confirm the order. Track the exit.');
     let text = lines.join('\n');

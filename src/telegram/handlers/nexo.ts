@@ -53,7 +53,6 @@ export async function dashboard(ctx: BotContext): Promise<void> {
     wallets,
     marketPrices,
     marketPrices.SOL.price,
-    minimumSol(ctx),
   );
   // ONE message: logo photo + terminal text as the caption + the main
   // keyboard together (as in the screenshot).
@@ -116,7 +115,7 @@ export const startHandler = safeHandler('nexo.start', async (ctx) => {
   const marketPrices = await ctx.services.market.getMarketPrices();
   await ctx.services.sendTerminal(
     ctx,
-    msg.terminalMessage(user?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price, minimumSol(ctx)),
+    msg.terminalMessage(user?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price),
     kb.dashboardKeyboard(),
   );
   ctx.services.logger.info({ chatId, isNew }, 'user started bot');

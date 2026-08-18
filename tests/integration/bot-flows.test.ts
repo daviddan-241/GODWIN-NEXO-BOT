@@ -53,9 +53,9 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(welcome.text).toContain('PORTFOLIO (0 wallets)');
     expect(welcome.text).toContain('Total tracked value: $0.00');
     expect(welcome.text).toContain('MARKET SNAPSHOT');
-    expect(welcome.text).toContain('🔒 TRADE GATE');
-    expect(welcome.text).toContain('Wallet + balance check required before buy/sell');
-    expect(welcome.text).toContain('Minimum balance: 0.001 SOL');
+    expect(welcome.text).toContain('🔒 Wallet + balance check required before buy/sell');
+    expect(welcome.text).not.toContain('TRADE GATE');
+    expect(welcome.text).not.toContain('Minimum balance');
     expect(welcome.text).toContain('Review the token. Confirm the order. Track the exit.');
 
     // Dashboard buttons (exact layout):

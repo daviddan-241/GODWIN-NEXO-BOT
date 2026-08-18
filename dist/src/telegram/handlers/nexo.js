@@ -73,7 +73,7 @@ function minimumSolNum(ctx) {
 async function dashboard(ctx) {
     const wallets = await walletsWithBalances(ctx);
     const marketPrices = await ctx.services.market.getMarketPrices();
-    const text = msg.terminalMessage(ctx.from?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price, minimumSol(ctx));
+    const text = msg.terminalMessage(ctx.from?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price);
     // ONE message: logo photo + terminal text as the caption + the main
     // keyboard together (as in the screenshot).
     await ctx.services.sendTerminal(ctx, text, kb.dashboardKeyboard());
@@ -123,7 +123,7 @@ exports.startHandler = (0, common_1.safeHandler)('nexo.start', async (ctx) => {
     // NEXO logo photo + terminal welcome.
     const wallets = await walletsWithBalances(ctx);
     const marketPrices = await ctx.services.market.getMarketPrices();
-    await ctx.services.sendTerminal(ctx, msg.terminalMessage(user?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price, minimumSol(ctx)), kb.dashboardKeyboard());
+    await ctx.services.sendTerminal(ctx, msg.terminalMessage(user?.first_name || 'trader', wallets, marketPrices, marketPrices.SOL.price), kb.dashboardKeyboard());
     ctx.services.logger.info({ chatId, isNew }, 'user started bot');
 });
 exports.dashboardHandler = (0, common_1.safeHandler)('nexo.dashboard', async (ctx) => {
