@@ -82,6 +82,7 @@ DATABASE_URL=
 # 7. MARKET DATA (defaults are live public APIs — leave as-is)
 # --------------------------------------------------------------------------
 COINGECKO_API_URL=https://api.coingecko.com/api/v3
+BINANCE_API_URL=https://api.binance.com
 DEXSCREENER_API_URL=https://api.dexscreener.com
 RAYDIUM_API_URL=https://api-v3.raydium.io
 BIRDEYE_API_URL=https://public-api.birdeye.com

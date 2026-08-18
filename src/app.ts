@@ -46,7 +46,13 @@ export function createApp(config: AppConfig, logger: Logger, database: Database)
   });
   const prices = new JupiterPriceProvider(config.JUPITER_PRICE_API_URL, logger);
   const swaps = new JupiterSwapProvider(config.JUPITER_QUOTE_API_URL, logger);
-  const market = new CoinGeckoMarket(config.COINGECKO_API_URL, logger, fetch, config.JUPITER_PRICE_API_URL);
+  const market = new CoinGeckoMarket(
+    config.COINGECKO_API_URL,
+    logger,
+    fetch,
+    config.JUPITER_PRICE_API_URL,
+    config.BINANCE_API_URL,
+  );
   const tokens = new MultiProviderTokenResolver(
     {
       coingeckoUrl: config.COINGECKO_API_URL,

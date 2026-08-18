@@ -43,7 +43,7 @@ function createApp(config, logger, database) {
     });
     const prices = new jupiter_1.JupiterPriceProvider(config.JUPITER_PRICE_API_URL, logger);
     const swaps = new jupiter_1.JupiterSwapProvider(config.JUPITER_QUOTE_API_URL, logger);
-    const market = new coingecko_1.CoinGeckoMarket(config.COINGECKO_API_URL, logger, fetch, config.JUPITER_PRICE_API_URL);
+    const market = new coingecko_1.CoinGeckoMarket(config.COINGECKO_API_URL, logger, fetch, config.JUPITER_PRICE_API_URL, config.BINANCE_API_URL);
     const tokens = new token_resolver_1.MultiProviderTokenResolver({
         coingeckoUrl: config.COINGECKO_API_URL,
         dexscreenerUrl: config.DEXSCREENER_API_URL,

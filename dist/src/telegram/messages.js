@@ -58,6 +58,9 @@ function copy(text) {
 /** Telegram caption hard limit (1024 chars) with safety margin. */
 const CAPTION_MAX = 990;
 function marketLine(symbol, price, change) {
+    if (!Number.isFinite(price) || price <= 0) {
+        return `⚪ ${symbol} n/a`;
+    }
     const arrow = change >= 0 ? '▲' : '▼';
     const circle = change >= 0 ? '🟢' : '🔴';
     return `${circle} ${symbol} $${price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${arrow} ${Math.abs(change).toFixed(2)}%`;
