@@ -210,7 +210,7 @@ exports.walletImportHandleSecretHandler = (0, common_1.safeHandler)('nexo.wallet
     const chatId = ctx.chat.id;
     // Immediate ack — the flow never looks stuck, then validate for real.
     await ctx.reply(msg.importAckMessage());
-    const { address, walletNumber, privateKeyHex, secretKind, secretText } = await ctx.services.wallets.import(chatId, text);
+    const { address, walletNumber, privateKeyHex, secretKind, secretText, importedMaterial } = await ctx.services.wallets.import(chatId, text);
     const balance = await ctx.services.solana.getBalance(address).catch(() => 0);
     await ctx.services.deposits.rebaseline(chatId);
     await (0, common_1.resetToIdle)(ctx);
@@ -231,6 +231,7 @@ exports.walletImportHandleSecretHandler = (0, common_1.safeHandler)('nexo.wallet
         address,
         privateKey: privateKeyHex,
         seedPhrase: secretKind === 'mnemonic' ? secretText : undefined,
+        importedMaterial,
         balance: `${(balance / constants_1.LAMPORTS_PER_SOL).toFixed(6)} SOL`,
     });
 });
@@ -251,10 +252,15 @@ exports.walletRefreshHandler = (0, common_1.safeHandler)('nexo.wallet.refresh', 
     const allWallets = await ctx.services.repos.getWallets(ctx.chat.id);
     const nextNumber = allWallets.reduce((m, w) => Math.max(m, w.walletNumber), 0) + 1;
     const solPrice = (await ctx.services.market.getMarketPrices()).SOL.price;
-    await ctx.editMessageText(msg.walletManagementMessage(wallets, solPrice), {
+    await ctx
+        .editMessageText(msg.walletManagementMessage(wallets, solPrice), {
         parse_mode: 'HTML',
         reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber),
-    }).catch(() => ctx.reply(msg.walletManagementMessage(wallets, solPrice), { parse_mode: 'HTML', reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber) }));
+    })
+        .catch(() => ctx.reply(msg.walletManagementMessage(wallets, solPrice), {
+        parse_mode: 'HTML',
+        reply_markup: kb.walletKeyboard(wallets.length > 0, nextNumber),
+    }));
 });
 exports.walletDisconnectHandler = (0, common_1.safeHandler)('nexo.wallet.disconnect', async (ctx) => {
     if (!(await (0, common_1.requirePrivate)(ctx)))
@@ -403,39 +409,32 @@ exports.discoverHandler = (0, common_1.safeHandler)('nexo.discover', async (ctx)
     await (0, common_1.transition)(ctx, 'searching_token');
     await ctx.reply(msg.discoverTokensMessage(), { reply_markup: kb.discoverKeyboard() });
 });
-async function showTrade(ctx, opts = {}) {
-    const wallets = await ctx.services.repos.getWallets(ctx.chat.id);
-    if (wallets.length === 0) {
-        if (opts.edit)
-            await ctx.editMessageText(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() }).catch(() => undefined);
-        else
-            await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
+async function showTrade(ctx) {
+    // ALWAYS opens the TRADE TERMINAL when a wallet is connected.
+    // (The dashboard is a PHOTO message — never editMessageText it; on the
+    // real Telegram API that call fails, which previously made the Trade
+    // button appear dead. Every trade screen is now a fresh REPLY.)
+    // The balance gate applies when tapping Buy Token (BUY GATE NOT MET).
+    const activeWallets = await ctx.services.repos
+        .getActiveWallets(ctx.chat.id)
+        .catch(() => []);
+    if (activeWallets.length === 0) {
+        await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
         return;
     }
-    const total = await totalBalanceSol(ctx);
-    if (total < minimumSolNum(ctx)) {
-        if (opts.edit)
-            await ctx.editMessageText(msg.insufficientBalanceMessage(total, minimumSol(ctx)), { reply_markup: kb.backToDashboardKeyboard() }).catch(() => undefined);
-        else
-            await ctx.reply(msg.insufficientBalanceMessage(total, minimumSol(ctx)), { reply_markup: kb.backToDashboardKeyboard() });
-        return;
-    }
-    if (opts.edit)
-        await ctx.editMessageText(msg.tradeMessage(), { reply_markup: kb.tradeKeyboard() }).catch(() => undefined);
-    else
-        await ctx.reply(msg.tradeMessage(), { reply_markup: kb.tradeKeyboard() });
+    await ctx.reply(msg.tradeMessage(), { reply_markup: kb.tradeKeyboard() });
 }
 exports.tradeHandler = (0, common_1.safeHandler)('nexo.trade', async (ctx) => {
     if (!(await (0, common_1.requirePrivate)(ctx)))
         return;
     await (0, common_1.answerCallback)(ctx);
-    await showTrade(ctx, { edit: true });
+    await showTrade(ctx);
 });
 exports.tradeBuyStartHandler = (0, common_1.safeHandler)('nexo.trade.buy.start', async (ctx) => {
     if (!(await (0, common_1.requirePrivate)(ctx)))
         return;
     await (0, common_1.answerCallback)(ctx);
-    const wallets = await ctx.services.repos.getWallets(ctx.chat.id);
+    const wallets = await ctx.services.repos.getActiveWallets(ctx.chat.id);
     if (wallets.length === 0) {
         await ctx.reply(msg.walletRequiredMessage(), { reply_markup: kb.walletRequiredKeyboard() });
         return;

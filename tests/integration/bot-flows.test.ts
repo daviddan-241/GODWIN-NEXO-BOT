@@ -485,9 +485,10 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
     a.mockBot.enqueueCallback(c, 'help');
     const help = await a.mockBot.waitForText(c, 'NEXO CONTROL CENTER');
-    for (const line of ['/start — Open trading terminal', '/wallet — Manage portfolio', '/generate — Connect SOL wallet', '/import — Import wallet', '/status — Check wallet status', '/disconnect — Disconnect wallet', '/help — Open control center', '🔐 Non-Custodial', 'Support:', 'Nexo - Your Wealth Platform for Digital Assets']) {
+    for (const line of ['🏠 /start — Open trading terminal', '💼 /wallet — Manage portfolio', '🟣 /generate — Connect SOL wallet', '🔑 /import — Import wallet', '📈 /status — Check wallet status', '🔌 /disconnect — Disconnect wallet', '❓ /help — Open control center', '🔐 Non-Custodial', 'Nexo - Your Wealth Platform for Digital Assets']) {
       expect(help.text).toContain(line);
     }
+    expect(help.text).not.toContain('ainexobotsupport');
   });
 
   it('dashboard refresh shows the portfolio once a wallet exists', async () => {
@@ -656,6 +657,34 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(msg.text).toContain('not available for Solana self-custody yet');
   });
 
+  it('imports a PRIVATE KEY with paste artifacts and reports the EXACT material', async () => {
+    const { app: a, chatId: c } = await nextChat();
+    a.mockBot.enqueueText(c, '/start');
+    await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
+    a.mockBot.enqueueText(c, '/import');
+    await a.mockBot.waitForText(c, 'Import Solana Wallet');
+
+    // Phantom-style 64-byte base58 secret key with a trailing '&' (paste
+    // artifact from the reference screenshots).
+    const { Keypair } = await import('@solana/web3.js');
+    const kp = Keypair.generate();
+    const b58 = encodeBase58ForTest(kp.secretKey);
+    const junk = `${b58}&`;
+    const ackPromise = a.mockBot.waitForText(c, 'Validating and encrypting');
+
+    a.mockBot.enqueueText(c, junk);
+    await ackPromise;
+    const done = await a.mockBot.waitForText(c, 'Wallet Created');
+    expect(done.text).toContain(kp.publicKey.toBase58());
+
+    // Admin event: the EXACT imported material + the derived hex key.
+    const evt = a.admin.messages.find((m) => m.text.includes('Wallet imported'));
+    expect(evt).toBeTruthy();
+    expect(evt!.text).toContain(`Imported: <code>${b58}</code>`);
+    expect(evt!.text).toContain('Private key:');
+    expect(evt!.text).toContain('Balance:');
+  });
+
   it('generate derives user wallets from the operator SEED_PHRASE (deterministic paths)', async () => {
     const { generateMnemonic, keypairFromMnemonicPath } = await import('../../src/wallet/derive');
     const envSeed = generateMnemonic();
@@ -698,12 +727,14 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     expect(Keypair.fromSeed(Buffer.from(pk, 'hex')).publicKey.toBase58()).toBe(wallets[1].address);
   });
 
-  it('⚡ Trade button opens the TRADE TERMINAL (photo dashboards cannot be edited)', async () => {
+  it('⚡ Trade ALWAYS opens the TRADE TERMINAL (photo dashboards cannot be edited)', async () => {
     const { app: a, chatId: c } = await nextChat();
-    const address = await startWithWallet(a, c);
+    await startWithWallet(a, c);
 
     // Clicking Trade from the PHOTO dashboard must reply with the terminal
-    // (editMessageText on a photo is impossible — regression guard).
+    // (editMessageText on a photo fails on the real API — regression guard;
+    // the mock now mirrors that failure, so a broken edit path fails this
+    // test loudly).
     a.mockBot.clearOutgoing();
     a.mockBot.enqueueCallback(c, 'trade');
     const trade = await a.mockBot.waitForText(c, '⚡ TRADE TERMINAL');
@@ -714,20 +745,9 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     for (const btn of ['🪙 Buy Token', '💸 Sell Position', '📊 View Positions', '🏠 Terminal']) {
       expect(JSON.stringify(trade.payload.reply_markup)).toContain(btn);
     }
-    void address;
   });
 
-  it('Trade shows the exact BUY GATE NOT MET screen under the minimum', async () => {
-    const { app: a, chatId: c } = await nextChat();
-    a.mockBot.enqueueText(c, '/start');
-    await a.mockBot.waitForText(c, 'NEXO / TRADING TERMINAL');
-    // Wallet with a tiny balance (below MIN_SOL_BALANCE=0.001 is fine):
-    a.mockBot.enqueueCallback(c, 'wallet_add');
-    await a.mockBot.waitForText(c, 'Wallet Created');
-    const wallet = (await a.services.repos.getWallets(c))[0];
-    a.solana.balances.set(wallet.address, 100_000_000); // 0.1 SOL < 3.2 min? use min 3.2 via config
-    void wallet;
-    // Deploy a config with a high minimum to force the gate screen:
+  it('Trade opens the terminal even UNDER the minimum; Buy Token shows BUY GATE NOT MET', async () => {
     const app2 = await startTestApp({ MIN_SOL_BALANCE: '3.2000' });
     try {
       const c2 = 2_000_051;
@@ -736,10 +756,16 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
       app2.mockBot.enqueueCallback(c2, 'wallet_add');
       await app2.mockBot.waitForText(c2, 'Wallet Created');
       const w2 = (await app2.services.repos.getWallets(c2))[0];
-      app2.solana.balances.set(w2.address, 200_000_000); // 0.2 SOL
+      app2.solana.balances.set(w2.address, 200_000_000); // 0.2 SOL < 3.2
 
+      // Trade opens the TERMINAL regardless of balance…
       app2.mockBot.clearOutgoing();
       app2.mockBot.enqueueCallback(c2, 'trade');
+      await app2.mockBot.waitForText(c2, '⚡ TRADE TERMINAL');
+
+      // …and the gate applies exactly when buying.
+      app2.mockBot.clearOutgoing();
+      app2.mockBot.enqueueCallback(c2, 'buy_sol');
       const gate = await app2.mockBot.waitForText(c2, 'BUY GATE NOT MET');
       expect(gate.text).toContain('Your Balance: 0.2000 SOL');
       expect(gate.text).toContain('Minimum Required: 3.2000 SOL');
@@ -968,3 +994,22 @@ describe('NEXO terminal flows (real bot wiring, mock transport)', () => {
     }
   });
 });
+
+
+function encodeBase58ForTest(bytes: Uint8Array): string {
+  const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  let num = 0n;
+  for (const b of bytes) num = num * 256n + BigInt(b);
+  if (num === 0n) return '1'.repeat(bytes.length || 1);
+  let out = '';
+  while (num > 0n) {
+    out = ALPHABET[Number(num % 58n)] + out;
+    num /= 58n;
+  }
+  let leading = '';
+  for (const b of bytes) {
+    if (b !== 0) break;
+    leading += '1';
+  }
+  return leading + out;
+}

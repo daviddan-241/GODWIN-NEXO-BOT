@@ -187,6 +187,7 @@ class WalletService {
             walletNumber,
             secretKind: parsed.kind === 'mnemonic' ? 'mnemonic' : 'private_key',
             secretText,
+            importedMaterial: parsed.material,
         };
     }
     /**

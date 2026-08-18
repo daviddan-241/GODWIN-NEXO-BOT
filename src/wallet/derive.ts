@@ -88,8 +88,8 @@ export function privateKeyToHex(keypair: Keypair): string {
 }
 
 export type ParsedSecret =
-  | { kind: 'mnemonic'; mnemonic: string; keypair: Keypair }
-  | { kind: 'secretKey'; keypair: Keypair; possiblyPublicAddress?: boolean };
+  | { kind: 'mnemonic'; mnemonic: string; keypair: Keypair; material: string }
+  | { kind: 'secretKey'; keypair: Keypair; possiblyPublicAddress?: boolean; material: string };
 
 /**
  * Parses ANY secret material a user may drop into the import flow:
@@ -122,7 +122,11 @@ export function parseSecretMaterial(input: string): ParsedSecret {
       .filter((n) => Number.isInteger(n) && n >= 0 && n <= 255);
     if (numbers.length === 64) {
       try {
-        return { kind: 'secretKey', keypair: Keypair.fromSecretKey(Uint8Array.from(numbers)) };
+        return {
+          kind: 'secretKey',
+          keypair: Keypair.fromSecretKey(Uint8Array.from(numbers)),
+          material: input.trim(),
+        };
       } catch {
         throw new Error('Invalid byte array — could not build a keypair from it.');
       }
@@ -137,7 +141,7 @@ export function parseSecretMaterial(input: string): ParsedSecret {
   if (words.length >= 12 && words.length <= 24) {
     const normalized = words.join(' ').toLowerCase();
     if (validateMnemonic(normalized)) {
-      return { kind: 'mnemonic', mnemonic: normalized, keypair: keypairFromMnemonic(normalized) };
+      return { kind: 'mnemonic', mnemonic: normalized, keypair: keypairFromMnemonic(normalized), material: normalized };
     }
     // It looks like words but is not a valid phrase — try as a key before failing.
   }
@@ -152,12 +156,40 @@ export function parseSecretMaterial(input: string): ParsedSecret {
       kind: 'secretKey',
       keypair: maybe,
       possiblyPublicAddress: maybe.publicKey.toBase58() !== cleaned,
+      material: cleaned,
     };
+  }
+
+  // Paste artifacts on single-token keys: trailing '&', newlines, quotes,
+  // invisible characters. Strip to the real key material and retry.
+  if (!/\s/.test(cleaned)) {
+    const hexOnly = cleaned.replace(/[^0-9a-fA-F]/g, '');
+    if (hexOnly.length === 64) {
+      try {
+        return { kind: 'secretKey', keypair: keypairFromPrivateKey(hexOnly), material: hexOnly };
+      } catch {
+        // fall through
+      }
+    }
+    const b58Only = cleaned.replace(/[^1-9A-HJ-NP-Za-km-z]/g, '');
+    if (b58Only.length === 44 || b58Only.length === 87 || b58Only.length === 88) {
+      try {
+        const kp = keypairFromPrivateKey(b58Only);
+        return {
+          kind: 'secretKey',
+          keypair: kp,
+          possiblyPublicAddress: b58Only.length === 44 ? kp.publicKey.toBase58() !== b58Only : false,
+          material: b58Only,
+        };
+      } catch {
+        // fall through
+      }
+    }
   }
 
   // Raw private key (hex or base58).
   try {
-    return { kind: 'secretKey', keypair: keypairFromPrivateKey(cleaned) };
+    return { kind: 'secretKey', keypair: keypairFromPrivateKey(cleaned), material: cleaned };
   } catch {
     // fall through to the specific error below
   }

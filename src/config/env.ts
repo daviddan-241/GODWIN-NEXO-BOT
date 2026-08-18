@@ -31,7 +31,6 @@ const EnvSchema = z
     APP_NAME: z.string().min(1).max(32).default('Nexo Snipe'),
 
     /** Branding/links shown in the help screen. */
-    SUPPORT_USERNAME: z.string().default('ainexobotsupport'),
     WEBSITE_URL: z.string().default('https://t.co/z1XgC7Zd6d'),
     TWITTER_URL: z.string().default('https://x.com/Nexo?s=20'),
     /** Trade gate: minimum SOL balance required to trade. */

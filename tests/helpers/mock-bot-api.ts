@@ -33,6 +33,8 @@ export class MockBotApiServer {
   private messageCounter = 1000;
   /** Highest getUpdates offset the bot has asked for. */
   private maxSeenOffset = 0;
+  /** Message ids that are PHOTOS — real Telegram refuses editMessageText on them. */
+  private photoMessageIds = new Set<number>();
   private botInfo = {
     id: 777000,
     is_bot: true,
@@ -160,7 +162,9 @@ export class MockBotApiServer {
         text: caption,
         payload: { multipart: true, contentType: req.headers['content-type'], reply_markup: replyMarkup },
       });
-      res.end(JSON.stringify({ ok: true, result: { message_id: ++this.messageCounter } }));
+      const msgId = ++this.messageCounter;
+      this.photoMessageIds.add(msgId);
+      res.end(JSON.stringify({ ok: true, result: { message_id: msgId } }));
       return;
     }
 
@@ -213,8 +217,23 @@ export class MockBotApiServer {
         );
         return;
       }
+      case 'editMessageText': {
+        const p = payload as { message_id?: number; text?: string; chat_id?: number };
+        if (p.message_id !== undefined && this.photoMessageIds.has(p.message_id)) {
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error_code: 400,
+              description: 'Bad Request: there is no text in the message to edit',
+            }),
+          );
+          return;
+        }
+        this.outgoing.push({ method, chat_id: p.chat_id ?? 0, text: p.text, payload });
+        res.end(JSON.stringify({ ok: true, result: true }));
+        return;
+      }
       case 'answerCallbackQuery':
-      case 'editMessageText':
       case 'editMessageReplyMarkup':
       case 'deleteMessage':
       case 'deleteWebhook':

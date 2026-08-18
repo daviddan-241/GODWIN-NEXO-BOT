@@ -1,6 +1,6 @@
 {
   "name": "hfive-bot",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Hfive — production-ready Solana trading Telegram bot (real RPC, real swaps via Jupiter, PostgreSQL, encrypted wallets)",
   "license": "MIT",
   "private": true,

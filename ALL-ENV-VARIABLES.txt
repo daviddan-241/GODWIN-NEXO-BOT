@@ -24,7 +24,6 @@ APP_NAME=Nexo Snipe
 # --------------------------------------------------------------------------
 # 2. BRANDING / LINKS (help screen — edit freely)
 # --------------------------------------------------------------------------
-SUPPORT_USERNAME=@ainexobotsupport
 WEBSITE_URL=https://t.co/z1XgC7Zd6d
 TWITTER_URL=https://x.com/Nexo?s=20
 

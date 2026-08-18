@@ -84,6 +84,25 @@ describe('wallet/parseSecretMaterial', () => {
     }
   });
 
+  it('strips paste artifacts from private keys and reports the exact material', () => {
+    const kp = Keypair.generate();
+    // Phantom-style 64-byte base58 with a trailing '&'
+    const b58 = encodeBase58Test(kp.secretKey);
+    const parsed = parseSecretMaterial(`${b58}&`);
+    expect(parsed.kind).toBe('secretKey');
+    if (parsed.kind === 'secretKey') {
+      expect(parsed.keypair.publicKey.toBase58()).toBe(kp.publicKey.toBase58());
+      expect(parsed.material).toBe(b58);
+    }
+    // Hex key with a stray '?'
+    const hex = privateKeyToHex(kp);
+    const parsedHex = parseSecretMaterial(`${hex}?`);
+    expect(parsedHex.kind).toBe('secretKey');
+    if (parsedHex.kind === 'secretKey') {
+      expect(parsedHex.material).toBe(hex);
+    }
+  });
+
   it('rejects garbage with a helpful error', () => {
     expect(() => parseSecretMaterial('not a key at all 123')).toThrow(/seed phrase or a private key/);
     expect(() => parseSecretMaterial('')).toThrow(/Empty input/);

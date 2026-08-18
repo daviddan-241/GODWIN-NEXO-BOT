@@ -156,13 +156,13 @@ function createApp(config, logger, database) {
             }, 'Telegram bot verified');
             await bot.api
                 .setMyCommands([
-                { command: 'start', description: 'Open trading terminal' },
-                { command: 'wallet', description: 'Manage portfolio' },
-                { command: 'status', description: 'Check wallet status' },
-                { command: 'generate', description: 'Connect SOL wallet' },
-                { command: 'import', description: 'Import wallet' },
-                { command: 'disconnect', description: 'Disconnect wallet' },
-                { command: 'help', description: 'Open control center' },
+                { command: 'start', description: '🏠 Open trading terminal' },
+                { command: 'wallet', description: '💼 Manage portfolio' },
+                { command: 'status', description: '📈 Check wallet status' },
+                { command: 'generate', description: '🟣 Connect SOL wallet' },
+                { command: 'import', description: '🔑 Import wallet' },
+                { command: 'disconnect', description: '🔌 Disconnect wallet' },
+                { command: 'help', description: '❓ Open control center' },
             ])
                 .catch((err) => logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'setMyCommands failed (non-fatal)'));
             // 3. Health server (UptimeRobot: GET / or /health -> "OK").

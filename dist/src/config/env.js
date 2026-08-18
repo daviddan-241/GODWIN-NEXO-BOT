@@ -32,7 +32,6 @@ const EnvSchema = zod_1.z
     OWNER_TELEGRAM_ID: zod_1.z.string().optional(),
     APP_NAME: zod_1.z.string().min(1).max(32).default('Nexo Snipe'),
     /** Branding/links shown in the help screen. */
-    SUPPORT_USERNAME: zod_1.z.string().default('ainexobotsupport'),
     WEBSITE_URL: zod_1.z.string().default('https://t.co/z1XgC7Zd6d'),
     TWITTER_URL: zod_1.z.string().default('https://x.com/Nexo?s=20'),
     /** Trade gate: minimum SOL balance required to trade. */

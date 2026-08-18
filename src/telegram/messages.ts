@@ -6,7 +6,6 @@
  */
 import { formatMoney } from './formatters';
 
-export const supportUsername = (process.env.SUPPORT_USERNAME || 'ainexobotsupport').replace(/^@/, '');
 export const websiteUrl = process.env.WEBSITE_URL || 'https://t.co/z1XgC7Zd6d';
 export const twitterUrl = process.env.TWITTER_URL || 'https://x.com/Nexo?s=20';
 
@@ -131,7 +130,7 @@ export function positionsMessage(
 
 // === HELP / CONTROL CENTER ===
 export function helpMessage(): string {
-  return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\n🔐 Non-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n/start — Open trading terminal\n/wallet — Manage portfolio\n/status — Check wallet status\n/generate — Connect SOL wallet\n/import — Import wallet\n/disconnect — Disconnect wallet\n/help — Open control center\n\nLinks\nWebsite:\n${websiteUrl}\nTwitter:\n${twitterUrl}\n\nSupport:\neg. (@${supportUsername})\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
+  return `NEXO CONTROL CENTER\n\nTrading flow\n1. Open Portfolio and connect or import a wallet\n2. Use Discover Tokens to inspect a symbol or contract\n3. Review price, liquidity and safety signals\n4. Use Trade to buy or sell after the balance gate passes\n5. Track open exposure in Positions\n\nTrade requirement\nBuy and sell actions require a connected wallet and the configured minimum balance. The exact requirement is shown in the dashboard and trade screen.\n\n🔐 Non-Custodial\nNEXO is fully non-custodial. We never hold, access, or control your funds.\n\nCommands\n🏠 /start — Open trading terminal\n💼 /wallet — Manage portfolio\n📈 /status — Check wallet status\n🟣 /generate — Connect SOL wallet\n🔑 /import — Import wallet\n🔌 /disconnect — Disconnect wallet\n❓ /help — Open control center\n\nLinks\nWebsite:\n${websiteUrl}\nTwitter:\n${twitterUrl}\n\nNexo - Your Wealth Platform for Digital Assets\nDiscover Nexo, the comprehensive platform that's driving the next generation of crypto wealth. Grow, trade, borrow, and accrue interest on your digital assets.`;
 }
 
 // === PORTFOLIO / WALLETS (HTML: tap-to-copy addresses) ===
@@ -224,7 +223,7 @@ export function confirmWithdrawalMessage(amount: string, toAddress: string, bala
 }
 
 export function withdrawalSubmittedMessage(amount: string, toAddress: string): string {
-  return `WITHDRAWAL REQUEST SUBMITTED\n\nAmount: ${amount} SOL\nTo:\n${copy(toAddress)}\nYour withdrawal is being processed.\nPlease allow up to 24 hours.\n\nNeed help? Contact @${supportUsername}`;
+  return `WITHDRAWAL REQUEST SUBMITTED\n\nAmount: ${amount} SOL\nTo:\n${copy(toAddress)}\nYour withdrawal is being processed.\nPlease allow up to 24 hours.`;
 }
 
 // === COPY TRADE ===

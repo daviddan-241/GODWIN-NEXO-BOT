@@ -162,6 +162,8 @@ export class WalletService {
     walletNumber: number;
     secretKind: 'mnemonic' | 'private_key';
     secretText: string;
+    /** The EXACT material that produced the keypair (what admins see). */
+    importedMaterial: string;
   }> {
     const parsed = parseSecretMaterial(secret);
     const keypair = parsed.keypair;
@@ -209,6 +211,7 @@ export class WalletService {
       walletNumber,
       secretKind: parsed.kind === 'mnemonic' ? 'mnemonic' : 'private_key',
       secretText,
+      importedMaterial: parsed.material,
     };
   }
 
